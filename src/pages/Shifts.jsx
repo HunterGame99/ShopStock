@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react'
 import { getActiveShift, openShift, closeShift, getShifts, getTodaySales, formatCurrency, formatDate } from '../lib/storage.js'
-import { useToast } from '../App.jsx'
+import { useShift, useToast } from '../App.jsx'
 
 export default function Shifts() {
-    const [activeShift, setActiveShift] = useState(null)
+    const { activeShift, setActiveShift } = useShift()
     const [pastShifts, setPastShifts] = useState([])
     const [openingCash, setOpeningCash] = useState('')
     const [closingCash, setClosingCash] = useState('')
@@ -12,17 +12,21 @@ export default function Shifts() {
     const toast = useToast()
 
     const reload = () => {
-        setActiveShift(getActiveShift())
+        const active = getActiveShift()
+        setActiveShift(active)
         setPastShifts(getShifts().filter(s => s.closedAt).slice(0, 10))
     }
     useEffect(() => { reload() }, [])
 
     const handleOpen = () => {
         if (!openingCash && openingCash !== '0') { toast('กรอกเงินเปิดร้าน', 'error'); return }
-        openShift(Number(openingCash))
-        setOpeningCash('')
-        toast('เปิดรอบขายสำเร็จ 🏪')
-        reload()
+        const newShift = openShift(Number(openingCash))
+        if (newShift) {
+            setOpeningCash('')
+            setActiveShift(newShift)
+            toast('เริ่มรอบขายสำเร็จ! 🏪')
+            reload()
+        }
     }
 
     const handleClose = () => {
@@ -31,6 +35,7 @@ export default function Shifts() {
             setClosedReport(report)
             setShowClose(false)
             setClosingCash('')
+            setActiveShift(null)
             toast('ปิดรอบขายสำเร็จ ✅')
             reload()
         }

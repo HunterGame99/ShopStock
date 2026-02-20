@@ -1,6 +1,7 @@
-import { NavLink, useLocation } from 'react-router-dom'
 import { useState, useEffect } from 'react'
-import { getTodayRevenue, getTodayProfit, getNotifications, formatCurrency, getSettings, saveSettings, getTodaySales } from '../lib/storage.js'
+import { NavLink, useLocation } from 'react-router-dom'
+import { useAuth, useShift } from '../App'
+import { getNotifications, getTodayRevenue, getTodayProfit, getTodaySales, formatCurrency, getSettings, saveSettings } from '../lib/storage'
 
 const navItems = [
     { path: '/', icon: '📊', label: 'แดชบอร์ด' },
@@ -23,6 +24,8 @@ export default function Layout({ children }) {
     const [todayProfit, setTodayProfit] = useState(0)
     const [todayBills, setTodayBills] = useState(0)
     const [theme, setTheme] = useState(getSettings().theme || 'dark')
+    const { user, logout } = useAuth()
+    const { activeShift } = useShift()
     const location = useLocation()
 
     const refreshStats = () => {
@@ -59,7 +62,21 @@ export default function Layout({ children }) {
                     <div className="sidebar-brand-icon">🏪</div>
                     <div>
                         <h1>ShopStock</h1>
-                        <span>Smart Inventory v3.1</span>
+                        <span>Smart Inventory v3.3</span>
+                    </div>
+                </div>
+
+                <div className="sidebar-user-section">
+                    <div className="user-profile">
+                        <div className="user-avatar">{user?.userName?.charAt(0)}</div>
+                        <div className="user-info">
+                            <div className="user-name">{user?.userName}</div>
+                            <div className="user-role">{user?.role === 'admin' ? 'เจ้าของร้าน' : 'พนักงาน'}</div>
+                        </div>
+                        <button className="logout-btn" onClick={logout} title="ออกจากระบบ">🚪</button>
+                    </div>
+                    <div className={`shift-status ${activeShift ? 'open' : 'closed'}`}>
+                        {activeShift ? '🟢 กำลังเปิดกะ' : '🔴 ยังไม่เริ่มกะ'}
                     </div>
                 </div>
 

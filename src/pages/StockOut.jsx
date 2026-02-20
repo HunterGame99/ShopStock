@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import { getProducts, addTransaction, getCustomers, formatCurrency, formatDate, playSound, getTopProducts, getCategoryEmoji, applyPromotions, getPromotions, CATEGORIES, holdBill, getHeldBills, resumeBill, deleteHeldBill, getRecentSales, addCredit, getUnpaidCredits, getSettings } from '../lib/storage.js'
-import { useToast } from '../App.jsx'
+import { useToast, useShift } from '../App.jsx'
 import BarcodeScanner from '../components/BarcodeScanner.jsx'
+import { Link } from 'react-router-dom'
 
 export default function StockOut() {
+    const { activeShift } = useShift()
     const [products, setProducts] = useState([])
     const [search, setSearch] = useState('')
     const [cart, setCart] = useState([])
@@ -27,6 +29,10 @@ export default function StockOut() {
     const [numpadValue, setNumpadValue] = useState('')
     const [settings, setSettings] = useState({ shopName: 'ShopStock', shopAddress: '', shopPhone: '', receiptFooter: 'ขอบคุณที่ใช้บริการ ❤️', vatEnabled: false, vatRate: 7 })
     const toast = useToast()
+
+    // Preview points: 25 THB = 1 Point
+    const selectedCustomerData = customers.find(c => c.id === selectedCustomer)
+    const pointsToEarn = Math.floor((cart.reduce((s, c) => s + (c.qty * c.price), 0) - (Number(discount) || 0) - promoDiscount) / 25)
 
     const reload = () => {
         const allProducts = getProducts()
@@ -64,6 +70,7 @@ export default function StockOut() {
     })
 
     const addToCart = useCallback((product) => {
+        if (!activeShift) { toast('กรุณาเปิดกะก่อนขายสินค้า', 'error'); return }
         if (product.stock <= 0) { toast('สินค้าหมดสต็อก', 'error'); playSound('error'); return }
         setCart(prev => {
             const existing = prev.find(c => c.productId === product.id)
@@ -142,6 +149,7 @@ export default function StockOut() {
     }
 
     const handleCheckout = () => {
+        if (!activeShift) { toast('กรุณาเปิดกะก่อนขายสินค้า', 'error'); return }
         if (cart.length === 0) { toast('เพิ่มสินค้า', 'error'); return }
         setPayment(paymentMethod === 'cash' ? '' : cartTotal.toString())
         setShowCheckout(true)
@@ -268,6 +276,11 @@ export default function StockOut() {
                             <option value="">👤 ลูกค้าทั่วไป</option>
                             {customers.map(c => <option key={c.id} value={c.id}>👤 {c.name} {c.phone ? `(${c.phone})` : ''}</option>)}
                         </select>
+                        {selectedCustomerData && (
+                            <div className="loyalty-badge" style={{ marginTop: '4px' }}>
+                                🪙 คะแนนสะสม: {selectedCustomerData.points || 0}
+                            </div>
+                        )}
                     </div>
 
                     {/* Cart Items */}
@@ -296,8 +309,21 @@ export default function StockOut() {
 
                     {cart.length > 0 && (
                         <>
+                            {/* Shift Warning / Points Preview */}
+                            <div style={{ padding: '6px var(--space-md)', background: !activeShift ? 'var(--danger-bg)' : 'transparent' }}>
+                                {!activeShift ? (
+                                    <div style={{ fontSize: '11px', color: 'var(--danger)', fontWeight: 800, textAlign: 'center' }}>
+                                        ⚠️ ยังไม่เปิดกะ <Link to="/shifts" style={{ textDecoration: 'underline' }}>เริ่มกะเลย</Link>
+                                    </div>
+                                ) : selectedCustomer && pointsToEarn > 0 && (
+                                    <div style={{ fontSize: '11px', color: 'var(--warning)', fontWeight: 800, textAlign: 'center' }}>
+                                        ✨ บิลนี้จะได้รับ {pointsToEarn} คะแนน
+                                    </div>
+                                )}
+                            </div>
+
                             {/* Discount */}
-                            <div style={{ padding: '6px var(--space-md)', borderTop: '1px solid var(--border)', display: 'flex', gap: '4px', alignItems: 'center' }}>
+                            <div style={{ padding: '4px var(--space-md)', borderTop: '1px solid var(--border)', display: 'flex', gap: '4px', alignItems: 'center' }}>
                                 <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>🏷️</span>
                                 <input className="form-control" type="number" min="0" value={discount} onChange={e => setDiscount(e.target.value)} placeholder="ส่วนลด" style={{ padding: '5px 8px', fontSize: 'var(--font-size-xs)', width: '70px' }} />
                                 <select className="form-control" value={discountType} onChange={e => setDiscountType(e.target.value)} style={{ padding: '5px 8px', fontSize: 'var(--font-size-xs)', width: 'auto' }}>

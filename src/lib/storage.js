@@ -12,6 +12,8 @@ const HELD_BILLS_KEY = 'shopstock_held_bills';
 const CREDITS_KEY = 'shopstock_credits';
 const EXPENSES_KEY = 'shopstock_expenses';
 const SETTINGS_KEY = 'shopstock_settings';
+const USERS_KEY = 'shopstock_users';
+const SESSION_KEY = 'shopstock_session';
 
 // ===== ID Generator =====
 export function generateId() {
@@ -60,9 +62,12 @@ export function saveCustomers(c) { setStore(CUSTOMERS_KEY, c) }
 export function addCustomer(customer) {
     const customers = getCustomers()
     const newCustomer = {
-        ...customer, id: generateId(),
-        phone: customer.phone || '', points: 0,
-        totalSpent: 0, visitCount: 0,
+        id: generateId(),
+        ...customer,
+        phone: customer.phone || '',
+        points: Number(customer.points) || 0,
+        totalSpent: 0,
+        visitCount: 0,
         createdAt: new Date().toISOString(),
     }
     customers.push(newCustomer)
@@ -91,7 +96,14 @@ export function saveTransactions(txs) { setStore(TRANSACTIONS_KEY, txs) }
 
 export function addTransaction(tx) {
     const transactions = getTransactions()
-    const newTx = { ...tx, id: generateId(), createdAt: new Date().toISOString() }
+    const session = getCurrentSession()
+    const newTx = {
+        ...tx,
+        id: generateId(),
+        staffId: session?.userId || 'system',
+        staffName: session?.userName || 'System',
+        createdAt: new Date().toISOString()
+    }
     transactions.unshift(newTx)
     saveTransactions(transactions)
 
@@ -101,20 +113,40 @@ export function addTransaction(tx) {
         if (product) {
             if (newTx.type === 'in') product.stock = (product.stock || 0) + item.qty
             else if (newTx.type === 'out') product.stock = Math.max(0, (product.stock || 0) - item.qty)
-            else if (newTx.type === 'refund') product.stock = (product.stock || 0) + item.qty // Refund restores stock
+            else if (newTx.type === 'refund') product.stock = (product.stock || 0) + item.qty
         }
     })
     saveProducts(products)
 
-    // Update customer stats
+    // Update customer stats & points
     if (newTx.customerId && newTx.type === 'out') {
         const customer = getCustomers().find(c => c.id === newTx.customerId)
         if (customer) {
             updateCustomer(customer.id, {
                 totalSpent: (customer.totalSpent || 0) + newTx.total,
                 visitCount: (customer.visitCount || 0) + 1,
-                points: (customer.points || 0) + Math.floor(newTx.total / 10),
+                points: (customer.points || 0) + Math.floor(newTx.total / 25), // 25 THB = 1 Point
             })
+        }
+    }
+
+    // Update active shift metrics
+    const activeShift = getActiveShift()
+    if (activeShift && newTx.type === 'out') {
+        const shifts = getShifts()
+        const sIdx = shifts.findIndex(s => s.id === activeShift.id)
+        if (sIdx !== -1) {
+            shifts[sIdx].transactionCount++
+            shifts[sIdx].totalSales += newTx.total
+            if (!newTx.paymentMethod || newTx.paymentMethod === 'cash') {
+                shifts[sIdx].cashSales += newTx.total
+                shifts[sIdx].expectedCash += newTx.total
+            } else if (newTx.paymentMethod === 'transfer') {
+                shifts[sIdx].transferSales += newTx.total
+            } else if (newTx.paymentMethod === 'qr') {
+                shifts[sIdx].qrSales += newTx.total
+            }
+            saveShifts(shifts)
         }
     }
 
@@ -222,55 +254,6 @@ export const EXPENSE_CATEGORIES = [
     { name: 'จิปาถะ', icon: '🛠️' },
 ]
 
-// ===== Shifts / Cash Drawer =====
-export function getShifts() { return getStore(SHIFTS_KEY) }
-export function saveShifts(s) { setStore(SHIFTS_KEY, s) }
-
-export function openShift(openingCash) {
-    const shifts = getShifts()
-    const active = shifts.find(s => !s.closedAt)
-    if (active) return active // already open
-    const shift = {
-        id: generateId(), openingCash: Number(openingCash),
-        closedAt: null, closingCash: 0,
-        expectedCash: Number(openingCash), cashSales: 0,
-        transferSales: 0, qrSales: 0, totalSales: 0,
-        transactionCount: 0, difference: 0,
-        openedAt: new Date().toISOString(),
-    }
-    shifts.unshift(shift)
-    saveShifts(shifts)
-    return shift
-}
-
-export function getActiveShift() {
-    return getShifts().find(s => !s.closedAt) || null
-}
-
-export function closeShift(closingCash) {
-    const shifts = getShifts()
-    const active = shifts.find(s => !s.closedAt)
-    if (!active) return null
-    // Calculate from transactions during this shift
-    const txs = getTransactions().filter(tx =>
-        tx.type === 'out' && new Date(tx.createdAt) >= new Date(active.openedAt)
-    )
-    const cashSales = txs.filter(t => !t.paymentMethod || t.paymentMethod === 'cash').reduce((s, t) => s + t.total, 0)
-    const transferSales = txs.filter(t => t.paymentMethod === 'transfer').reduce((s, t) => s + t.total, 0)
-    const qrSales = txs.filter(t => t.paymentMethod === 'qr').reduce((s, t) => s + t.total, 0)
-    const expectedCash = active.openingCash + cashSales
-    active.cashSales = cashSales
-    active.transferSales = transferSales
-    active.qrSales = qrSales
-    active.totalSales = cashSales + transferSales + qrSales
-    active.transactionCount = txs.length
-    active.expectedCash = expectedCash
-    active.closingCash = Number(closingCash)
-    active.difference = Number(closingCash) - expectedCash
-    active.closedAt = new Date().toISOString()
-    saveShifts(shifts)
-    return active
-}
 
 // ===== Promotions =====
 export function getPromotions() { return getStore(PROMOTIONS_KEY) }
@@ -342,15 +325,30 @@ export function getSettings() {
 export function saveSettings(s) { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)) }
 
 // ===== Formatting =====
+// ===== Formatting =====
 export function formatCurrency(amount) {
+    if (amount === undefined || amount === null || isNaN(amount)) return '฿0'
     return new Intl.NumberFormat('th-TH', { style: 'currency', currency: 'THB', minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(amount)
 }
-export function formatNumber(n) { return new Intl.NumberFormat('th-TH').format(n) }
+export function formatNumber(n) {
+    if (n === undefined || n === null || isNaN(n)) return '0'
+    return new Intl.NumberFormat('th-TH').format(n)
+}
 export function formatDate(dateStr) {
-    return new Intl.DateTimeFormat('th-TH', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(dateStr))
+    if (!dateStr) return '-'
+    try {
+        const date = new Date(dateStr)
+        if (isNaN(date.getTime())) return '-'
+        return new Intl.DateTimeFormat('th-TH', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(date)
+    } catch { return '-' }
 }
 export function formatDateShort(dateStr) {
-    return new Intl.DateTimeFormat('th-TH', { day: 'numeric', month: 'short' }).format(new Date(dateStr))
+    if (!dateStr) return '-'
+    try {
+        const date = new Date(dateStr)
+        if (isNaN(date.getTime())) return '-'
+        return new Intl.DateTimeFormat('th-TH', { day: 'numeric', month: 'short' }).format(date)
+    } catch { return '-' }
 }
 
 // ===== Smart Analytics =====
@@ -566,6 +564,98 @@ export function getNotifications() {
     if (target > 0 && today >= target) notifs.push({ type: 'success', icon: '🎯', msg: `ทะลุเป้า! ยอดขาย ${formatCurrency(today)}`, link: '/' })
     if (target > 0 && today >= target * 0.8 && today < target) notifs.push({ type: 'info', icon: '💪', msg: `ใกล้ถึงเป้าแล้ว! เหลืออีก ${formatCurrency(target - today)}`, link: '/' })
     return notifs
+}
+
+// ===== Staff & Security =====
+export function getUsers() {
+    const users = getStore(USERS_KEY)
+    if (users.length === 0) {
+        // Create default admin if none exists
+        const admin = { id: 'admin', name: 'เจ้าของร้าน', pin: '1234', role: 'admin', createdAt: new Date().toISOString() }
+        saveUsers([admin])
+        return [admin]
+    }
+    return users
+}
+export function saveUsers(users) { setStore(USERS_KEY, users) }
+
+export function authenticate(pin) {
+    const users = getUsers()
+    const user = users.find(u => u.pin === pin)
+    if (user) {
+        const session = { userId: user.id, userName: user.name, role: user.role, loginAt: new Date().toISOString() }
+        localStorage.setItem(SESSION_KEY, JSON.stringify(session))
+        return session
+    }
+    return null
+}
+
+export function getCurrentSession() {
+    try { return JSON.parse(localStorage.getItem(SESSION_KEY)) } catch { return null }
+}
+
+export function logout() {
+    localStorage.removeItem(SESSION_KEY)
+}
+
+// ===== Shift Management =====
+export function getShifts() { return getStore(SHIFTS_KEY) }
+export function saveShifts(shifts) { setStore(SHIFTS_KEY, shifts) }
+
+export function getActiveShift() {
+    const shifts = getShifts()
+    return shifts.find(s => !s.closedAt) || null
+}
+
+export function openShift(openingCash) {
+    const session = getCurrentSession()
+    if (!session) return null
+    const shifts = getShifts()
+    const newShift = {
+        id: generateId(),
+        staffId: session.userId,
+        staffName: session.userName,
+        openedAt: new Date().toISOString(),
+        closedAt: null,
+        openingCash: Number(openingCash),
+        expectedCash: Number(openingCash),
+        cashSales: 0,
+        transferSales: 0,
+        qrSales: 0,
+        totalSales: 0,
+        transactionCount: 0,
+        closingCash: 0,
+        difference: 0,
+        notes: ''
+    }
+    shifts.unshift(newShift)
+    saveShifts(shifts)
+    return newShift
+}
+
+export function closeShift(closingCash, notes) {
+    const active = getActiveShift()
+    if (!active) return null
+    const shifts = getShifts()
+    const idx = shifts.findIndex(s => s.id === active.id)
+    if (idx === -1) return null
+
+    shifts[idx].closedAt = new Date().toISOString()
+    shifts[idx].closingCash = Number(closingCash)
+    shifts[idx].notes = notes || ''
+    shifts[idx].difference = shifts[idx].closingCash - shifts[idx].expectedCash
+
+    saveShifts(shifts)
+    return shifts[idx]
+}
+
+export function updateShift(shift) {
+    const shifts = getShifts()
+    const idx = shifts.findIndex(s => s.id === shift.id)
+    if (idx !== -1) {
+        shifts[idx] = shift
+        saveShifts(shifts)
+    }
 }
 
 // ===== Categories =====
