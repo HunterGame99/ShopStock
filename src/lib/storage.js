@@ -1,9 +1,13 @@
 // ============================================
-// ShopStock v2.0 — Smart Data Layer
+// ShopStock v3.0 — Ultimate Data Layer
 // ============================================
 
 const PRODUCTS_KEY = 'shopstock_products';
 const TRANSACTIONS_KEY = 'shopstock_transactions';
+const CUSTOMERS_KEY = 'shopstock_customers';
+const SHIFTS_KEY = 'shopstock_shifts';
+const PROMOTIONS_KEY = 'shopstock_promotions';
+const TARGETS_KEY = 'shopstock_targets';
 const SETTINGS_KEY = 'shopstock_settings';
 
 // ===== ID Generator =====
@@ -11,435 +15,448 @@ export function generateId() {
     return Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
 }
 
-// ===== Products CRUD =====
-export function getProducts() {
-    try {
-        return JSON.parse(localStorage.getItem(PRODUCTS_KEY)) || [];
-    } catch { return []; }
-}
+// ===== Generic CRUD helpers =====
+function getStore(key) { try { return JSON.parse(localStorage.getItem(key)) || [] } catch { return [] } }
+function setStore(key, data) { localStorage.setItem(key, JSON.stringify(data)) }
 
-export function saveProducts(products) {
-    localStorage.setItem(PRODUCTS_KEY, JSON.stringify(products));
-}
+// ===== Products CRUD =====
+export function getProducts() { return getStore(PRODUCTS_KEY) }
+export function saveProducts(products) { setStore(PRODUCTS_KEY, products) }
 
 export function addProduct(product) {
-    const products = getProducts();
+    const products = getProducts()
     const newProduct = {
-        ...product,
-        id: generateId(),
-        stock: Number(product.stock) || 0,
-        costPrice: Number(product.costPrice) || 0,
-        sellPrice: Number(product.sellPrice) || 0,
-        minStock: Number(product.minStock) || 5,
-        barcode: product.barcode || '',
-        emoji: product.emoji || '📦',
+        ...product, id: generateId(),
+        stock: Number(product.stock) || 0, costPrice: Number(product.costPrice) || 0,
+        sellPrice: Number(product.sellPrice) || 0, minStock: Number(product.minStock) || 5,
+        barcode: product.barcode || '', emoji: product.emoji || '📦',
+        lots: product.lots || [], // [{lot, qty, mfgDate, expDate}]
         createdAt: new Date().toISOString(),
-    };
-    products.push(newProduct);
-    saveProducts(products);
-    return newProduct;
+    }
+    products.push(newProduct)
+    saveProducts(products)
+    return newProduct
 }
 
 export function updateProduct(id, updates) {
-    const products = getProducts();
-    const index = products.findIndex(p => p.id === id);
-    if (index === -1) return null;
-    products[index] = { ...products[index], ...updates };
-    saveProducts(products);
-    return products[index];
+    const products = getProducts()
+    const index = products.findIndex(p => p.id === id)
+    if (index === -1) return null
+    products[index] = { ...products[index], ...updates }
+    saveProducts(products)
+    return products[index]
 }
 
-export function deleteProduct(id) {
-    saveProducts(getProducts().filter(p => p.id !== id));
+export function deleteProduct(id) { saveProducts(getProducts().filter(p => p.id !== id)) }
+export function getProductById(id) { return getProducts().find(p => p.id === id) || null }
+
+// ===== Customers CRUD =====
+export function getCustomers() { return getStore(CUSTOMERS_KEY) }
+export function saveCustomers(c) { setStore(CUSTOMERS_KEY, c) }
+
+export function addCustomer(customer) {
+    const customers = getCustomers()
+    const newCustomer = {
+        ...customer, id: generateId(),
+        phone: customer.phone || '', points: 0,
+        totalSpent: 0, visitCount: 0,
+        createdAt: new Date().toISOString(),
+    }
+    customers.push(newCustomer)
+    saveCustomers(customers)
+    return newCustomer
 }
 
-export function getProductById(id) {
-    return getProducts().find(p => p.id === id) || null;
+export function updateCustomer(id, updates) {
+    const customers = getCustomers()
+    const i = customers.findIndex(c => c.id === id)
+    if (i === -1) return null
+    customers[i] = { ...customers[i], ...updates }
+    saveCustomers(customers)
+    return customers[i]
+}
+
+export function deleteCustomer(id) { saveCustomers(getCustomers().filter(c => c.id !== id)) }
+
+export function getCustomerPurchases(customerId) {
+    return getTransactions().filter(tx => tx.customerId === customerId && tx.type === 'out')
 }
 
 // ===== Transactions CRUD =====
-export function getTransactions() {
-    try {
-        return JSON.parse(localStorage.getItem(TRANSACTIONS_KEY)) || [];
-    } catch { return []; }
-}
-
-export function saveTransactions(txs) {
-    localStorage.setItem(TRANSACTIONS_KEY, JSON.stringify(txs));
-}
+export function getTransactions() { return getStore(TRANSACTIONS_KEY) }
+export function saveTransactions(txs) { setStore(TRANSACTIONS_KEY, txs) }
 
 export function addTransaction(tx) {
-    const transactions = getTransactions();
-    const newTx = { ...tx, id: generateId(), createdAt: new Date().toISOString() };
-    transactions.unshift(newTx);
-    saveTransactions(transactions);
+    const transactions = getTransactions()
+    const newTx = { ...tx, id: generateId(), createdAt: new Date().toISOString() }
+    transactions.unshift(newTx)
+    saveTransactions(transactions)
 
-    // Update stock
-    const products = getProducts();
+    const products = getProducts()
     newTx.items.forEach(item => {
-        const product = products.find(p => p.id === item.productId);
+        const product = products.find(p => p.id === item.productId)
         if (product) {
             product.stock = newTx.type === 'in'
                 ? (product.stock || 0) + item.qty
-                : Math.max(0, (product.stock || 0) - item.qty);
+                : Math.max(0, (product.stock || 0) - item.qty)
         }
-    });
-    saveProducts(products);
-    return newTx;
+    })
+    saveProducts(products)
+
+    // Update customer stats
+    if (newTx.customerId && newTx.type === 'out') {
+        const customer = getCustomers().find(c => c.id === newTx.customerId)
+        if (customer) {
+            updateCustomer(customer.id, {
+                totalSpent: (customer.totalSpent || 0) + newTx.total,
+                visitCount: (customer.visitCount || 0) + 1,
+                points: (customer.points || 0) + Math.floor(newTx.total / 10),
+            })
+        }
+    }
+
+    return newTx
 }
+
+// ===== Shifts / Cash Drawer =====
+export function getShifts() { return getStore(SHIFTS_KEY) }
+export function saveShifts(s) { setStore(SHIFTS_KEY, s) }
+
+export function openShift(openingCash) {
+    const shifts = getShifts()
+    const active = shifts.find(s => !s.closedAt)
+    if (active) return active // already open
+    const shift = {
+        id: generateId(), openingCash: Number(openingCash),
+        closedAt: null, closingCash: 0,
+        expectedCash: Number(openingCash), cashSales: 0,
+        transferSales: 0, qrSales: 0, totalSales: 0,
+        transactionCount: 0, difference: 0,
+        openedAt: new Date().toISOString(),
+    }
+    shifts.unshift(shift)
+    saveShifts(shifts)
+    return shift
+}
+
+export function getActiveShift() {
+    return getShifts().find(s => !s.closedAt) || null
+}
+
+export function closeShift(closingCash) {
+    const shifts = getShifts()
+    const active = shifts.find(s => !s.closedAt)
+    if (!active) return null
+    // Calculate from transactions during this shift
+    const txs = getTransactions().filter(tx =>
+        tx.type === 'out' && new Date(tx.createdAt) >= new Date(active.openedAt)
+    )
+    const cashSales = txs.filter(t => !t.paymentMethod || t.paymentMethod === 'cash').reduce((s, t) => s + t.total, 0)
+    const transferSales = txs.filter(t => t.paymentMethod === 'transfer').reduce((s, t) => s + t.total, 0)
+    const qrSales = txs.filter(t => t.paymentMethod === 'qr').reduce((s, t) => s + t.total, 0)
+    const expectedCash = active.openingCash + cashSales
+    active.cashSales = cashSales
+    active.transferSales = transferSales
+    active.qrSales = qrSales
+    active.totalSales = cashSales + transferSales + qrSales
+    active.transactionCount = txs.length
+    active.expectedCash = expectedCash
+    active.closingCash = Number(closingCash)
+    active.difference = Number(closingCash) - expectedCash
+    active.closedAt = new Date().toISOString()
+    saveShifts(shifts)
+    return active
+}
+
+// ===== Promotions =====
+export function getPromotions() { return getStore(PROMOTIONS_KEY) }
+export function savePromotions(p) { setStore(PROMOTIONS_KEY, p) }
+
+export function addPromotion(promo) {
+    const promos = getPromotions()
+    promos.push({ ...promo, id: generateId(), active: true, createdAt: new Date().toISOString() })
+    savePromotions(promos)
+}
+
+export function togglePromotion(id) {
+    const promos = getPromotions()
+    const p = promos.find(pr => pr.id === id)
+    if (p) p.active = !p.active
+    savePromotions(promos)
+}
+
+export function deletePromotion(id) { savePromotions(getPromotions().filter(p => p.id !== id)) }
+
+// Apply promotions to cart items → returns discount amount
+export function applyPromotions(cartItems) {
+    const promos = getPromotions().filter(p => p.active)
+    let totalDiscount = 0
+
+    promos.forEach(promo => {
+        if (promo.type === 'percent_all') {
+            const subtotal = cartItems.reduce((s, c) => s + c.qty * c.price, 0)
+            totalDiscount += subtotal * (promo.value / 100)
+        } else if (promo.type === 'buy_x_get_discount') {
+            cartItems.forEach(item => {
+                if (item.qty >= promo.minQty) {
+                    totalDiscount += item.price * item.qty * (promo.value / 100)
+                }
+            })
+        } else if (promo.type === 'product_discount') {
+            cartItems.forEach(item => {
+                if (item.productId === promo.productId) {
+                    totalDiscount += item.price * item.qty * (promo.value / 100)
+                }
+            })
+        }
+    })
+    return Math.round(totalDiscount * 100) / 100
+}
+
+// ===== Sales Targets =====
+export function getTargets() { return getStore(TARGETS_KEY) }
+export function saveTargets(t) { setStore(TARGETS_KEY, t) }
+
+export function setDailyTarget(amount) {
+    const targets = getTargets()
+    const today = new Date().toDateString()
+    const existing = targets.find(t => t.date === today)
+    if (existing) { existing.amount = amount }
+    else { targets.push({ date: today, amount, id: generateId() }) }
+    saveTargets(targets)
+}
+
+export function getTodayTarget() {
+    return getTargets().find(t => t.date === new Date().toDateString())?.amount || 0
+}
+
+// ===== Settings =====
+export function getSettings() {
+    try { return JSON.parse(localStorage.getItem(SETTINGS_KEY)) || { theme: 'dark', shopName: 'ShopStock' } }
+    catch { return { theme: 'dark', shopName: 'ShopStock' } }
+}
+export function saveSettings(s) { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)) }
 
 // ===== Formatting =====
 export function formatCurrency(amount) {
-    return new Intl.NumberFormat('th-TH', {
-        style: 'currency', currency: 'THB',
-        minimumFractionDigits: 0, maximumFractionDigits: 2,
-    }).format(amount);
+    return new Intl.NumberFormat('th-TH', { style: 'currency', currency: 'THB', minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(amount)
 }
-
-export function formatNumber(n) {
-    return new Intl.NumberFormat('th-TH').format(n);
-}
-
+export function formatNumber(n) { return new Intl.NumberFormat('th-TH').format(n) }
 export function formatDate(dateStr) {
-    return new Intl.DateTimeFormat('th-TH', {
-        year: 'numeric', month: 'short', day: 'numeric',
-        hour: '2-digit', minute: '2-digit',
-    }).format(new Date(dateStr));
+    return new Intl.DateTimeFormat('th-TH', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(dateStr))
 }
-
 export function formatDateShort(dateStr) {
-    return new Intl.DateTimeFormat('th-TH', {
-        day: 'numeric', month: 'short',
-    }).format(new Date(dateStr));
+    return new Intl.DateTimeFormat('th-TH', { day: 'numeric', month: 'short' }).format(new Date(dateStr))
 }
 
 // ===== Smart Analytics =====
-
-// Get transactions for a specific date
 export function getTransactionsForDate(date) {
-    const dateStr = new Date(date).toDateString();
-    return getTransactions().filter(tx => new Date(tx.createdAt).toDateString() === dateStr);
+    const dateStr = new Date(date).toDateString()
+    return getTransactions().filter(tx => new Date(tx.createdAt).toDateString() === dateStr)
 }
 
-// Today's sales
-export function getTodaySales() {
-    return getTransactionsForDate(new Date()).filter(tx => tx.type === 'out');
-}
+export function getTodaySales() { return getTransactionsForDate(new Date()).filter(tx => tx.type === 'out') }
+export function getYesterdaySales() { const d = new Date(); d.setDate(d.getDate() - 1); return getTransactionsForDate(d).filter(tx => tx.type === 'out') }
 
-// Yesterday's sales
-export function getYesterdaySales() {
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    return getTransactionsForDate(yesterday).filter(tx => tx.type === 'out');
-}
-
-// Sales for a date range
 export function getSalesInRange(startDate, endDate) {
-    const start = new Date(startDate).setHours(0, 0, 0, 0);
-    const end = new Date(endDate).setHours(23, 59, 59, 999);
-    return getTransactions().filter(tx => {
-        const t = new Date(tx.createdAt).getTime();
-        return tx.type === 'out' && t >= start && t <= end;
-    });
+    const start = new Date(startDate).setHours(0, 0, 0, 0)
+    const end = new Date(endDate).setHours(23, 59, 59, 999)
+    return getTransactions().filter(tx => { const t = new Date(tx.createdAt).getTime(); return tx.type === 'out' && t >= start && t <= end })
 }
 
-// Low stock products
-export function getLowStockProducts() {
-    return getProducts().filter(p => p.stock <= p.minStock);
-}
+export function getLowStockProducts() { return getProducts().filter(p => p.stock <= p.minStock) }
+export function getTotalStockValue() { return getProducts().reduce((s, p) => s + (p.stock * p.costPrice), 0) }
+export function getTotalRetailValue() { return getProducts().reduce((s, p) => s + (p.stock * p.sellPrice), 0) }
 
-// Total stock value (cost)
-export function getTotalStockValue() {
-    return getProducts().reduce((sum, p) => sum + (p.stock * p.costPrice), 0);
-}
-
-// Total stock value (retail)
-export function getTotalRetailValue() {
-    return getProducts().reduce((sum, p) => sum + (p.stock * p.sellPrice), 0);
-}
-
-// Calculate profit from a sale transaction
 export function calcTxProfit(tx) {
-    if (tx.type !== 'out') return 0;
-    const products = getProducts();
+    if (tx.type !== 'out') return 0
+    const products = getProducts()
     return tx.items.reduce((profit, item) => {
-        const product = products.find(p => p.id === item.productId);
-        const cost = product ? product.costPrice : 0;
-        return profit + (item.price - cost) * item.qty;
-    }, 0);
+        const product = products.find(p => p.id === item.productId)
+        return profit + (item.price - (product?.costPrice || 0)) * item.qty
+    }, 0)
 }
 
-// Today's total revenue
-export function getTodayRevenue() {
-    return getTodaySales().reduce((s, tx) => s + tx.total, 0);
-}
+export function getTodayRevenue() { return getTodaySales().reduce((s, tx) => s + tx.total, 0) }
+export function getTodayProfit() { return getTodaySales().reduce((s, tx) => s + calcTxProfit(tx), 0) }
+export function getYesterdayRevenue() { return getYesterdaySales().reduce((s, tx) => s + tx.total, 0) }
 
-// Today's total profit
-export function getTodayProfit() {
-    return getTodaySales().reduce((s, tx) => s + calcTxProfit(tx), 0);
-}
-
-// Yesterday's revenue (for trend comparison)
-export function getYesterdayRevenue() {
-    return getYesterdaySales().reduce((s, tx) => s + tx.total, 0);
-}
-
-// Revenue trend % compared to yesterday
 export function getRevenueTrend() {
-    const today = getTodayRevenue();
-    const yesterday = getYesterdayRevenue();
-    if (yesterday === 0) return today > 0 ? 100 : 0;
-    return ((today - yesterday) / yesterday * 100);
+    const today = getTodayRevenue(), yesterday = getYesterdayRevenue()
+    if (yesterday === 0) return today > 0 ? 100 : 0
+    return ((today - yesterday) / yesterday * 100)
 }
 
-// Top selling products (by quantity sold in last N days)
 export function getTopProducts(days = 30, limit = 5) {
-    const since = new Date();
-    since.setDate(since.getDate() - days);
-    const sales = getTransactions().filter(tx =>
-        tx.type === 'out' && new Date(tx.createdAt) >= since
-    );
-
-    const productSales = {};
-    sales.forEach(tx => {
-        tx.items.forEach(item => {
-            if (!productSales[item.productId]) {
-                productSales[item.productId] = { id: item.productId, name: item.productName, qty: 0, revenue: 0 };
-            }
-            productSales[item.productId].qty += item.qty;
-            productSales[item.productId].revenue += item.qty * item.price;
-        });
-    });
-
-    return Object.values(productSales)
-        .sort((a, b) => b.qty - a.qty)
-        .slice(0, limit);
+    const since = new Date(); since.setDate(since.getDate() - days)
+    const sales = getTransactions().filter(tx => tx.type === 'out' && new Date(tx.createdAt) >= since)
+    const map = {}
+    sales.forEach(tx => tx.items.forEach(item => {
+        if (!map[item.productId]) map[item.productId] = { id: item.productId, name: item.productName, qty: 0, revenue: 0 }
+        map[item.productId].qty += item.qty
+        map[item.productId].revenue += item.qty * item.price
+    }))
+    return Object.values(map).sort((a, b) => b.qty - a.qty).slice(0, limit)
 }
 
-// Slow-moving products (no sales in N days)
 export function getSlowProducts(days = 7) {
-    const since = new Date();
-    since.setDate(since.getDate() - days);
-    const sales = getTransactions().filter(tx =>
-        tx.type === 'out' && new Date(tx.createdAt) >= since
-    );
-
-    const soldIds = new Set();
-    sales.forEach(tx => tx.items.forEach(item => soldIds.add(item.productId)));
-
-    return getProducts().filter(p => !soldIds.has(p.id) && p.stock > 0);
+    const since = new Date(); since.setDate(since.getDate() - days)
+    const sales = getTransactions().filter(tx => tx.type === 'out' && new Date(tx.createdAt) >= since)
+    const soldIds = new Set()
+    sales.forEach(tx => tx.items.forEach(item => soldIds.add(item.productId)))
+    return getProducts().filter(p => !soldIds.has(p.id) && p.stock > 0)
 }
 
-// Last 7 days revenue & profit data
 export function getLast7DaysData() {
-    const products = getProducts();
+    const products = getProducts()
     return Array.from({ length: 7 }, (_, i) => {
-        const date = new Date();
-        date.setDate(date.getDate() - (6 - i));
-        const dayStr = date.toDateString();
-        const daySales = getTransactions().filter(tx =>
-            tx.type === 'out' && new Date(tx.createdAt).toDateString() === dayStr
-        );
-        const revenue = daySales.reduce((s, tx) => s + tx.total, 0);
-        const profit = daySales.reduce((s, tx) => {
-            return s + tx.items.reduce((p, item) => {
-                const prod = products.find(pr => pr.id === item.productId);
-                return p + (item.price - (prod?.costPrice || 0)) * item.qty;
-            }, 0);
-        }, 0);
-        return {
-            label: formatDateShort(date.toISOString()),
-            date: date.toDateString(),
-            revenue,
-            profit,
-            count: daySales.length,
-        };
-    });
+        const date = new Date(); date.setDate(date.getDate() - (6 - i))
+        const dayStr = date.toDateString()
+        const daySales = getTransactions().filter(tx => tx.type === 'out' && new Date(tx.createdAt).toDateString() === dayStr)
+        const revenue = daySales.reduce((s, tx) => s + tx.total, 0)
+        const profit = daySales.reduce((s, tx) => s + tx.items.reduce((p, item) => {
+            const prod = products.find(pr => pr.id === item.productId)
+            return p + (item.price - (prod?.costPrice || 0)) * item.qty
+        }, 0), 0)
+        return { label: formatDateShort(date.toISOString()), date: date.toDateString(), revenue, profit, count: daySales.length }
+    })
+}
+
+// Weekly comparison (this week vs last week)
+export function getWeekComparison() {
+    const thisWeek = [], lastWeek = []
+    for (let i = 0; i < 7; i++) {
+        const d1 = new Date(); d1.setDate(d1.getDate() - (6 - i))
+        const d2 = new Date(); d2.setDate(d2.getDate() - (13 - i))
+        const tw = getTransactionsForDate(d1).filter(tx => tx.type === 'out').reduce((s, tx) => s + tx.total, 0)
+        const lw = getTransactionsForDate(d2).filter(tx => tx.type === 'out').reduce((s, tx) => s + tx.total, 0)
+        thisWeek.push({ label: formatDateShort(d1.toISOString()), revenue: tw })
+        lastWeek.push({ label: formatDateShort(d2.toISOString()), revenue: lw })
+    }
+    return { thisWeek, lastWeek }
+}
+
+// Expiring products
+export function getExpiringProducts(days = 30) {
+    const products = getProducts()
+    const deadline = new Date(); deadline.setDate(deadline.getDate() + days)
+    const results = []
+    products.forEach(p => {
+        (p.lots || []).forEach(lot => {
+            if (lot.expDate && new Date(lot.expDate) <= deadline) {
+                results.push({ ...p, lot: lot.lot, expDate: lot.expDate, lotQty: lot.qty })
+            }
+        })
+    })
+    return results.sort((a, b) => new Date(a.expDate) - new Date(b.expDate))
 }
 
 // ===== AI Predictions =====
-
-// Simple moving average prediction for next week
 export function predictNextWeekSales() {
     const last14 = Array.from({ length: 14 }, (_, i) => {
-        const date = new Date();
-        date.setDate(date.getDate() - (13 - i));
-        const dayStr = date.toDateString();
-        return getTransactions()
-            .filter(tx => tx.type === 'out' && new Date(tx.createdAt).toDateString() === dayStr)
-            .reduce((s, tx) => s + tx.total, 0);
-    });
-
-    // Weighted average (recent days matter more)
-    const weights = last14.map((_, i) => i + 1);
-    const totalWeight = weights.reduce((a, b) => a + b, 0);
-    const predicted = last14.reduce((sum, val, i) => sum + val * weights[i], 0) / totalWeight;
-    return Math.round(predicted * 7);
-}
-
-// Smart reorder suggestion
-export function getReorderSuggestions() {
-    const products = getProducts();
-    const transactions = getTransactions();
-    const now = new Date();
-    const thirtyDaysAgo = new Date(now);
-    thirtyDaysAgo.setDate(now.getDate() - 30);
-
-    return products.map(product => {
-        // Calculate average daily sales
-        const sales = transactions.filter(tx =>
-            tx.type === 'out' && new Date(tx.createdAt) >= thirtyDaysAgo
-        );
-
-        let totalSold = 0;
-        sales.forEach(tx => {
-            tx.items.forEach(item => {
-                if (item.productId === product.id) totalSold += item.qty;
-            });
-        });
-
-        const daysTracked = Math.max(1, Math.ceil((now - thirtyDaysAgo) / 86400000));
-        const avgDailySales = totalSold / daysTracked;
-        const daysUntilEmpty = avgDailySales > 0 ? Math.floor(product.stock / avgDailySales) : 999;
-        const suggestedOrder = Math.max(0, Math.ceil(avgDailySales * 14) - product.stock); // 2 weeks buffer
-
-        return {
-            ...product,
-            avgDailySales: Math.round(avgDailySales * 10) / 10,
-            daysUntilEmpty,
-            suggestedOrder,
-            urgency: daysUntilEmpty <= 3 ? 'critical' : daysUntilEmpty <= 7 ? 'warning' : 'ok',
-        };
+        const date = new Date(); date.setDate(date.getDate() - (13 - i))
+        return getTransactionsForDate(date).filter(tx => tx.type === 'out').reduce((s, tx) => s + tx.total, 0)
     })
-        .filter(p => p.suggestedOrder > 0)
-        .sort((a, b) => a.daysUntilEmpty - b.daysUntilEmpty);
+    const weights = last14.map((_, i) => i + 1)
+    const totalWeight = weights.reduce((a, b) => a + b, 0)
+    return Math.round(last14.reduce((sum, val, i) => sum + val * weights[i], 0) / totalWeight * 7)
 }
 
-// Profit/Loss report for a period
+export function getReorderSuggestions() {
+    const products = getProducts(), transactions = getTransactions()
+    const now = new Date(), ago = new Date(now); ago.setDate(now.getDate() - 30)
+    return products.map(product => {
+        let totalSold = 0
+        transactions.filter(tx => tx.type === 'out' && new Date(tx.createdAt) >= ago)
+            .forEach(tx => tx.items.forEach(item => { if (item.productId === product.id) totalSold += item.qty }))
+        const days = Math.max(1, Math.ceil((now - ago) / 86400000))
+        const avg = totalSold / days
+        const daysLeft = avg > 0 ? Math.floor(product.stock / avg) : 999
+        const suggested = Math.max(0, Math.ceil(avg * 14) - product.stock)
+        return { ...product, avgDailySales: Math.round(avg * 10) / 10, daysUntilEmpty: daysLeft, suggestedOrder: suggested, urgency: daysLeft <= 3 ? 'critical' : daysLeft <= 7 ? 'warning' : 'ok' }
+    }).filter(p => p.suggestedOrder > 0).sort((a, b) => a.daysUntilEmpty - b.daysUntilEmpty)
+}
+
 export function getProfitReport(days = 30) {
-    const since = new Date();
-    since.setDate(since.getDate() - days);
-    const transactions = getTransactions().filter(tx => new Date(tx.createdAt) >= since);
-    const products = getProducts();
-
-    const totalRevenue = transactions
-        .filter(tx => tx.type === 'out')
-        .reduce((s, tx) => s + tx.total, 0);
-
-    const totalCost = transactions
-        .filter(tx => tx.type === 'out')
-        .reduce((s, tx) => s + tx.items.reduce((c, item) => {
-            const prod = products.find(p => p.id === item.productId);
-            return c + (prod?.costPrice || 0) * item.qty;
-        }, 0), 0);
-
-    const totalStockIn = transactions
-        .filter(tx => tx.type === 'in')
-        .reduce((s, tx) => s + tx.total, 0);
-
-    return {
-        revenue: totalRevenue,
-        costOfGoods: totalCost,
-        grossProfit: totalRevenue - totalCost,
-        margin: totalRevenue > 0 ? ((totalRevenue - totalCost) / totalRevenue * 100) : 0,
-        stockInvestment: totalStockIn,
-        transactionCount: transactions.filter(tx => tx.type === 'out').length,
-    };
+    const since = new Date(); since.setDate(since.getDate() - days)
+    const txs = getTransactions().filter(tx => new Date(tx.createdAt) >= since)
+    const products = getProducts()
+    const revenue = txs.filter(tx => tx.type === 'out').reduce((s, tx) => s + tx.total, 0)
+    const cost = txs.filter(tx => tx.type === 'out').reduce((s, tx) => s + tx.items.reduce((c, i) => {
+        const p = products.find(pr => pr.id === i.productId); return c + (p?.costPrice || 0) * i.qty
+    }, 0), 0)
+    const stockIn = txs.filter(tx => tx.type === 'in').reduce((s, tx) => s + tx.total, 0)
+    return { revenue, costOfGoods: cost, grossProfit: revenue - cost, margin: revenue > 0 ? ((revenue - cost) / revenue * 100) : 0, stockInvestment: stockIn, transactionCount: txs.filter(tx => tx.type === 'out').length }
 }
 
-// ===== Backup & Restore =====
+// ===== Backup & Export =====
 export function exportData() {
-    return JSON.stringify({
-        version: '2.0',
-        exportedAt: new Date().toISOString(),
-        products: getProducts(),
-        transactions: getTransactions(),
-    }, null, 2);
+    return JSON.stringify({ version: '3.0', exportedAt: new Date().toISOString(), products: getProducts(), transactions: getTransactions(), customers: getCustomers(), shifts: getShifts(), promotions: getPromotions(), targets: getTargets() }, null, 2)
 }
 
 export function importData(jsonString) {
     try {
-        const data = JSON.parse(jsonString);
-        if (data.products) saveProducts(data.products);
-        if (data.transactions) saveTransactions(data.transactions);
-        return true;
-    } catch {
-        return false;
-    }
+        const data = JSON.parse(jsonString)
+        if (data.products) saveProducts(data.products)
+        if (data.transactions) saveTransactions(data.transactions)
+        if (data.customers) saveCustomers(data.customers)
+        if (data.shifts) saveShifts(data.shifts)
+        if (data.promotions) savePromotions(data.promotions)
+        if (data.targets) saveTargets(data.targets)
+        return true
+    } catch { return false }
 }
 
-// Export transactions as CSV
 export function exportCSV(transactions) {
-    const headers = ['วันที่', 'ประเภท', 'สินค้า', 'จำนวน', 'มูลค่า', 'หมายเหตุ'];
+    const headers = ['วันที่', 'ประเภท', 'สินค้า', 'จำนวน', 'มูลค่า', 'หมายเหตุ']
     const rows = transactions.map(tx => [
-        new Date(tx.createdAt).toLocaleString('th-TH'),
-        tx.type === 'in' ? 'นำเข้า' : 'ขาย',
+        new Date(tx.createdAt).toLocaleString('th-TH'), tx.type === 'in' ? 'นำเข้า' : 'ขาย',
         tx.items.map(i => `${i.productName}×${i.qty}`).join(' | '),
-        tx.items.reduce((s, i) => s + i.qty, 0),
-        tx.total,
-        tx.note || '',
-    ]);
-    const csv = [headers, ...rows].map(r => r.map(c => `"${c}"`).join(',')).join('\n');
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `shopstock_${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+        tx.items.reduce((s, i) => s + i.qty, 0), tx.total, tx.note || '',
+    ])
+    const csv = [headers, ...rows].map(r => r.map(c => `"${c}"`).join(',')).join('\n')
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a'); a.href = url; a.download = `shopstock_${new Date().toISOString().split('T')[0]}.csv`; a.click(); URL.revokeObjectURL(url)
 }
 
 // ===== Sound Effects =====
 export function playSound(type = 'scan') {
     try {
-        const ctx = new (window.AudioContext || window.webkitAudioContext)();
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        gain.gain.value = 0.1;
-
-        if (type === 'scan') {
-            osc.frequency.value = 1200;
-            osc.type = 'sine';
-            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
-            osc.start();
-            osc.stop(ctx.currentTime + 0.15);
-        } else if (type === 'success') {
-            osc.frequency.value = 800;
-            osc.type = 'sine';
-            osc.start();
-            setTimeout(() => { osc.frequency.value = 1000; }, 100);
-            setTimeout(() => { osc.frequency.value = 1200; }, 200);
-            osc.stop(ctx.currentTime + 0.35);
-        } else if (type === 'error') {
-            osc.frequency.value = 300;
-            osc.type = 'square';
-            gain.gain.value = 0.05;
-            osc.start();
-            osc.stop(ctx.currentTime + 0.3);
-        }
+        const ctx = new (window.AudioContext || window.webkitAudioContext)()
+        const osc = ctx.createOscillator(), gain = ctx.createGain()
+        osc.connect(gain); gain.connect(ctx.destination); gain.gain.value = 0.1
+        if (type === 'scan') { osc.frequency.value = 1200; osc.type = 'sine'; gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15); osc.start(); osc.stop(ctx.currentTime + 0.15) }
+        else if (type === 'success') { osc.frequency.value = 800; osc.type = 'sine'; osc.start(); setTimeout(() => osc.frequency.value = 1000, 100); setTimeout(() => osc.frequency.value = 1200, 200); osc.stop(ctx.currentTime + 0.35) }
+        else if (type === 'error') { osc.frequency.value = 300; osc.type = 'square'; gain.gain.value = 0.05; osc.start(); osc.stop(ctx.currentTime + 0.3) }
     } catch { }
+}
+
+// ===== Notifications =====
+export function getNotifications() {
+    const notifs = []
+    const low = getLowStockProducts()
+    if (low.length > 0) notifs.push({ type: 'warning', icon: '⚠️', msg: `${low.length} สินค้าใกล้หมด`, link: '/products' })
+    const expiring = getExpiringProducts(7)
+    if (expiring.length > 0) notifs.push({ type: 'danger', icon: '⏰', msg: `${expiring.length} สินค้าใกล้หมดอายุ (7 วัน)`, link: '/products' })
+    const today = getTodayRevenue(), target = getTodayTarget()
+    if (target > 0 && today >= target) notifs.push({ type: 'success', icon: '🎯', msg: `ทะลุเป้า! ยอดขาย ${formatCurrency(today)}`, link: '/' })
+    if (target > 0 && today >= target * 0.8 && today < target) notifs.push({ type: 'info', icon: '💪', msg: `ใกล้ถึงเป้าแล้ว! เหลืออีก ${formatCurrency(target - today)}`, link: '/' })
+    return notifs
 }
 
 // ===== Categories =====
 export const CATEGORIES = [
-    { name: 'เครื่องดื่ม', emoji: '🥤' },
-    { name: 'อาหาร', emoji: '🍜' },
-    { name: 'ขนม', emoji: '🍿' },
-    { name: 'เครื่องเขียน', emoji: '✏️' },
-    { name: 'ของใช้', emoji: '🧴' },
-    { name: 'สุขภาพ', emoji: '💊' },
+    { name: 'เครื่องดื่ม', emoji: '🥤' }, { name: 'อาหาร', emoji: '🍜' },
+    { name: 'ขนม', emoji: '🍿' }, { name: 'เครื่องเขียน', emoji: '✏️' },
+    { name: 'ของใช้', emoji: '🧴' }, { name: 'สุขภาพ', emoji: '💊' },
     { name: 'อื่นๆ', emoji: '📦' },
-];
-
-export function getCategoryEmoji(category) {
-    return CATEGORIES.find(c => c.name === category)?.emoji || '📦';
-}
+]
+export function getCategoryEmoji(category) { return CATEGORIES.find(c => c.name === category)?.emoji || '📦' }
 
 // ===== Seed Demo Data =====
 export function seedDemoData() {
-    if (getProducts().length > 0) return;
+    if (getProducts().length > 0) return
 
     const demoProducts = [
         { name: 'น้ำดื่มสิงห์ 600ml', sku: 'DRK-001', barcode: '8850999220017', category: 'เครื่องดื่ม', emoji: '🥤', costPrice: 5, sellPrice: 10, stock: 48, minStock: 10 },
@@ -454,71 +471,54 @@ export function seedDemoData() {
         { name: 'น้ำมันพืช 1 ลิตร', sku: 'FOOD-003', barcode: '8850742910016', category: 'อาหาร', emoji: '🫗', costPrice: 35, sellPrice: 55, stock: 12, minStock: 5 },
         { name: 'กาแฟเนสกาแฟ 3in1', sku: 'DRK-003', barcode: '8850124045019', category: 'เครื่องดื่ม', emoji: '☕', costPrice: 4, sellPrice: 8, stock: 40, minStock: 15 },
         { name: 'ทิชชู่เอลีท 6 ม้วน', sku: 'CARE-003', barcode: '8850161010016', category: 'ของใช้', emoji: '🧻', costPrice: 45, sellPrice: 69, stock: 6, minStock: 4 },
-    ];
+    ]
 
-    demoProducts.forEach(p => addProduct(p));
+    demoProducts.forEach(p => addProduct(p))
 
-    // Generate realistic multi-day sales history
-    const products = getProducts();
-    const txs = getTransactions();
-    const now = new Date();
+    // Demo customers
+    addCustomer({ name: 'คุณสมชาย', phone: '0812345678', note: 'ลูกค้าประจำ' })
+    addCustomer({ name: 'คุณสมหญิง', phone: '0898765432', note: '' })
+    addCustomer({ name: 'ร้านข้าวแกง ป้าแดง', phone: '0851112222', note: 'ซื้อส่ง' })
+
+    // Demo sales history
+    const products = getProducts()
+    const customers = getCustomers()
+    const txs = getTransactions()
+    const now = new Date()
 
     for (let daysAgo = 7; daysAgo >= 0; daysAgo--) {
-        const date = new Date(now);
-        date.setDate(date.getDate() - daysAgo);
-
-        // 2-5 sale transactions per day
-        const numSales = 2 + Math.floor(Math.random() * 4);
+        const date = new Date(now); date.setDate(date.getDate() - daysAgo)
+        const numSales = 2 + Math.floor(Math.random() * 4)
         for (let i = 0; i < numSales; i++) {
-            const numItems = 1 + Math.floor(Math.random() * 3);
-            const items = [];
-            const usedIdx = new Set();
+            const numItems = 1 + Math.floor(Math.random() * 3)
+            const items = []; const usedIdx = new Set()
             for (let j = 0; j < numItems; j++) {
-                let idx;
-                do { idx = Math.floor(Math.random() * products.length); } while (usedIdx.has(idx));
-                usedIdx.add(idx);
-                const qty = 1 + Math.floor(Math.random() * 3);
-                items.push({
-                    productId: products[idx].id,
-                    productName: products[idx].name,
-                    qty,
-                    price: products[idx].sellPrice,
-                });
+                let idx; do { idx = Math.floor(Math.random() * products.length) } while (usedIdx.has(idx))
+                usedIdx.add(idx)
+                const qty = 1 + Math.floor(Math.random() * 3)
+                items.push({ productId: products[idx].id, productName: products[idx].name, qty, price: products[idx].sellPrice })
             }
-            const total = items.reduce((s, i) => s + i.qty * i.price, 0);
-            const payment = Math.ceil(total / 10) * 10;
-            const txDate = new Date(date);
-            txDate.setHours(8 + Math.floor(Math.random() * 12), Math.floor(Math.random() * 60));
+            const total = items.reduce((s, item) => s + item.qty * item.price, 0)
+            const payment = Math.ceil(total / 10) * 10
+            const txDate = new Date(date); txDate.setHours(8 + Math.floor(Math.random() * 12), Math.floor(Math.random() * 60))
+            const methods = ['cash', 'cash', 'cash', 'transfer', 'qr']
             txs.push({
-                id: generateId(),
-                type: 'out',
-                items,
-                total,
-                payment,
-                change: payment - total,
-                note: '',
+                id: generateId(), type: 'out', items, total, payment, change: payment - total, note: '',
+                paymentMethod: methods[Math.floor(Math.random() * methods.length)],
+                customerId: Math.random() > 0.6 ? customers[Math.floor(Math.random() * customers.length)].id : null,
                 createdAt: txDate.toISOString(),
-            });
+            })
         }
-
-        // 0-1 stock-in per day
         if (Math.random() > 0.5 || daysAgo === 5) {
-            const idx = Math.floor(Math.random() * products.length);
-            const qty = 6 + Math.floor(Math.random() * 18);
-            const txDate = new Date(date);
-            txDate.setHours(8, Math.floor(Math.random() * 30));
-            txs.push({
-                id: generateId(),
-                type: 'in',
-                items: [{ productId: products[idx].id, productName: products[idx].name, qty, price: products[idx].costPrice }],
-                total: qty * products[idx].costPrice,
-                note: 'รับสินค้าจากผู้จำหน่าย',
-                createdAt: txDate.toISOString(),
-            });
+            const idx = Math.floor(Math.random() * products.length)
+            const qty = 6 + Math.floor(Math.random() * 18)
+            const txDate = new Date(date); txDate.setHours(8, Math.floor(Math.random() * 30))
+            txs.push({ id: generateId(), type: 'in', items: [{ productId: products[idx].id, productName: products[idx].name, qty, price: products[idx].costPrice }], total: qty * products[idx].costPrice, note: 'รับสินค้าจากผู้จำหน่าย', createdAt: txDate.toISOString() })
         }
     }
+    txs.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    saveTransactions(txs)
 
-    // Sort by date
-    txs.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-    saveTransactions(txs);
+    // Set a demo daily target
+    setDailyTarget(1000)
 }
