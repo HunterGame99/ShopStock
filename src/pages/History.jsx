@@ -1,178 +1,171 @@
 import { useState, useEffect } from 'react'
-import { getTransactions, formatCurrency, formatDate } from '../lib/storage.js'
+import { getTransactions, formatCurrency, formatDate, exportCSV, calcTxProfit } from '../lib/storage.js'
+import { useToast } from '../App.jsx'
 
 export default function History() {
     const [transactions, setTransactions] = useState([])
     const [filterType, setFilterType] = useState('')
     const [filterDate, setFilterDate] = useState('')
     const [search, setSearch] = useState('')
-    const [expandedId, setExpandedId] = useState(null)
+    const [expanded, setExpanded] = useState(null)
+    const [viewMode, setViewMode] = useState('all') // 'all', 'daily', 'monthly'
+    const toast = useToast()
 
-    useEffect(() => {
-        setTransactions(getTransactions())
-    }, [])
+    useEffect(() => { setTransactions(getTransactions()) }, [])
 
     const filtered = transactions.filter(tx => {
         const matchType = !filterType || tx.type === filterType
-        const matchDate = !filterDate || new Date(tx.createdAt).toISOString().startsWith(filterDate)
-        const matchSearch = !search || tx.items.some(i =>
-            i.productName.toLowerCase().includes(search.toLowerCase())
-        )
+        const matchDate = !filterDate || tx.createdAt.startsWith(filterDate)
+        const matchSearch = !search || tx.items.some(i => i.productName.toLowerCase().includes(search.toLowerCase()))
         return matchType && matchDate && matchSearch
     })
 
-    const totalIn = filtered.filter(tx => tx.type === 'in').reduce((sum, tx) => sum + tx.total, 0)
-    const totalOut = filtered.filter(tx => tx.type === 'out').reduce((sum, tx) => sum + tx.total, 0)
+    // Daily summary
+    const dailySummary = {}
+    filtered.forEach(tx => {
+        const day = tx.createdAt.split('T')[0]
+        if (!dailySummary[day]) dailySummary[day] = { date: day, revenue: 0, cost: 0, profit: 0, stockIn: 0, txCount: 0 }
+        if (tx.type === 'out') {
+            dailySummary[day].revenue += tx.total
+            dailySummary[day].profit += calcTxProfit(tx)
+            dailySummary[day].txCount++
+        } else {
+            dailySummary[day].stockIn += tx.total
+        }
+    })
+    const dailyData = Object.values(dailySummary).sort((a, b) => b.date.localeCompare(a.date))
+
+    // Summary stats
+    const totalRevenue = filtered.filter(tx => tx.type === 'out').reduce((s, tx) => s + tx.total, 0)
+    const totalStockIn = filtered.filter(tx => tx.type === 'in').reduce((s, tx) => s + tx.total, 0)
+    const totalProfit = filtered.filter(tx => tx.type === 'out').reduce((s, tx) => s + calcTxProfit(tx), 0)
+
+    const handleExport = () => {
+        exportCSV(filtered)
+        toast('ดาวน์โหลด CSV สำเร็จ 📁')
+    }
 
     return (
         <div className="animate-in">
             <div className="page-header">
                 <h2>📋 ประวัติรายการ</h2>
-                <p>ดูรายการรับเข้าและขายออกทั้งหมด</p>
+                <p>ดูย้อนหลังทุกการซื้อขาย</p>
             </div>
 
-            {/* Summary */}
+            {/* Summary Cards */}
             <div className="stat-cards" style={{ marginBottom: 'var(--space-lg)' }}>
-                <div className="stat-card">
-                    <div className="stat-card-icon blue">📥</div>
+                <div className="stat-card mini">
+                    <div className="stat-card-icon green">💰</div>
                     <div className="stat-card-info">
-                        <h3>มูลค่านำเข้า</h3>
-                        <div className="stat-value" style={{ color: 'var(--info)' }}>{formatCurrency(totalIn)}</div>
-                        <div className="stat-sub">{filtered.filter(tx => tx.type === 'in').length} รายการ</div>
+                        <h3>รายได้</h3>
+                        <div className="stat-value" style={{ fontSize: 'var(--font-size-lg)' }}>{formatCurrency(totalRevenue)}</div>
                     </div>
                 </div>
-                <div className="stat-card">
-                    <div className="stat-card-icon green">🛒</div>
+                <div className="stat-card mini">
+                    <div className="stat-card-icon blue">📈</div>
                     <div className="stat-card-info">
-                        <h3>มูลค่าขาย</h3>
-                        <div className="stat-value" style={{ color: 'var(--success)' }}>{formatCurrency(totalOut)}</div>
-                        <div className="stat-sub">{filtered.filter(tx => tx.type === 'out').length} รายการ</div>
+                        <h3>กำไร</h3>
+                        <div className="stat-value" style={{ fontSize: 'var(--font-size-lg)', color: 'var(--success)' }}>{formatCurrency(totalProfit)}</div>
                     </div>
                 </div>
-                <div className="stat-card">
-                    <div className="stat-card-icon purple">📊</div>
+                <div className="stat-card mini">
+                    <div className="stat-card-icon orange">📥</div>
                     <div className="stat-card-info">
-                        <h3>รายการทั้งหมด</h3>
-                        <div className="stat-value">{filtered.length}</div>
-                        <div className="stat-sub">รายการ</div>
+                        <h3>ต้นทุนนำเข้า</h3>
+                        <div className="stat-value" style={{ fontSize: 'var(--font-size-lg)' }}>{formatCurrency(totalStockIn)}</div>
                     </div>
                 </div>
             </div>
 
-            {/* Filters */}
-            <div className="filter-bar">
-                <div className="table-search" style={{ flex: 1, maxWidth: '300px' }}>
-                    <span className="search-icon">🔍</span>
-                    <input
-                        type="text"
-                        placeholder="ค้นหาสินค้า..."
-                        value={search}
-                        onChange={e => setSearch(e.target.value)}
-                    />
-                </div>
-                <select value={filterType} onChange={e => setFilterType(e.target.value)}>
-                    <option value="">ทุกประเภท</option>
-                    <option value="in">📥 รับเข้า</option>
-                    <option value="out">🛒 ขายออก</option>
-                </select>
-                <input
-                    type="date"
-                    value={filterDate}
-                    onChange={e => setFilterDate(e.target.value)}
-                />
-                {(filterType || filterDate || search) && (
-                    <button className="btn btn-ghost btn-sm" onClick={() => { setFilterType(''); setFilterDate(''); setSearch('') }}>
-                        ✕ ล้างตัวกรอง
-                    </button>
-                )}
-            </div>
-
-            {/* Transactions Table */}
             <div className="table-container">
-                {filtered.length === 0 ? (
-                    <div className="table-empty">
-                        <div className="empty-icon">📋</div>
-                        <p>ไม่มีรายการ</p>
+                <div className="table-toolbar" style={{ flexWrap: 'wrap' }}>
+                    <div className="table-search">
+                        <span className="search-icon">🔍</span>
+                        <input type="text" placeholder="ค้นหาสินค้า..." value={search} onChange={e => setSearch(e.target.value)} />
                     </div>
-                ) : (
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>ประเภท</th>
-                                <th>รายการ</th>
-                                <th>จำนวน</th>
-                                <th>มูลค่า</th>
-                                <th>วันที่</th>
-                                <th>หมายเหตุ</th>
-                                <th></th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {filtered.map(tx => (
-                                <>
-                                    <tr key={tx.id} style={{ cursor: 'pointer' }} onClick={() => setExpandedId(expandedId === tx.id ? null : tx.id)}>
-                                        <td>
-                                            <span className={`badge ${tx.type === 'in' ? 'badge-info' : 'badge-success'}`}>
-                                                {tx.type === 'in' ? '📥 นำเข้า' : '🛒 ขาย'}
-                                            </span>
-                                        </td>
-                                        <td style={{ color: 'var(--text-primary)' }}>
-                                            {tx.items.length === 1
-                                                ? tx.items[0].productName
-                                                : `${tx.items[0].productName} +${tx.items.length - 1} รายการ`
-                                            }
-                                        </td>
-                                        <td style={{ fontWeight: 600 }}>
-                                            {tx.items.reduce((sum, i) => sum + i.qty, 0)} ชิ้น
-                                        </td>
-                                        <td style={{ fontWeight: 700, color: tx.type === 'in' ? 'var(--info)' : 'var(--success)' }}>
-                                            {formatCurrency(tx.total)}
-                                        </td>
-                                        <td>{formatDate(tx.createdAt)}</td>
-                                        <td style={{ color: 'var(--text-muted)' }}>{tx.note || '-'}</td>
-                                        <td>
-                                            <span style={{ color: 'var(--text-muted)', fontSize: 'var(--font-size-xs)' }}>
-                                                {expandedId === tx.id ? '▲' : '▼'}
-                                            </span>
-                                        </td>
+                    <div style={{ display: 'flex', gap: 'var(--space-sm)', flexWrap: 'wrap' }}>
+                        <select className="form-control" value={filterType} onChange={e => setFilterType(e.target.value)} style={{ width: 'auto', padding: '8px 12px' }}>
+                            <option value="">ทุกประเภท</option>
+                            <option value="in">📥 นำเข้า</option>
+                            <option value="out">🛒 ขาย</option>
+                        </select>
+                        <input className="form-control" type="date" value={filterDate} onChange={e => setFilterDate(e.target.value)} style={{ width: 'auto', padding: '8px 12px' }} />
+                        <div style={{ display: 'flex', gap: '2px', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)', padding: '2px' }}>
+                            <button className={`btn btn-sm ${viewMode === 'all' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setViewMode('all')}>ทั้งหมด</button>
+                            <button className={`btn btn-sm ${viewMode === 'daily' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setViewMode('daily')}>รายวัน</button>
+                        </div>
+                        <button className="btn btn-secondary btn-sm" onClick={handleExport}>📁 Export CSV</button>
+                    </div>
+                </div>
+
+                {viewMode === 'daily' ? (
+                    // Daily summary view
+                    dailyData.length === 0 ? (
+                        <div className="table-empty"><div className="empty-icon">📋</div><p>ไม่พบรายการ</p></div>
+                    ) : (
+                        <table>
+                            <thead><tr><th>วันที่</th><th>รายการขาย</th><th>รายได้</th><th>กำไร</th><th>นำเข้า</th></tr></thead>
+                            <tbody>
+                                {dailyData.map(d => (
+                                    <tr key={d.date}>
+                                        <td style={{ fontWeight: 600 }}>{new Date(d.date).toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short' })}</td>
+                                        <td>{d.txCount} รายการ</td>
+                                        <td style={{ fontWeight: 700, color: 'var(--accent-primary-hover)' }}>{formatCurrency(d.revenue)}</td>
+                                        <td style={{ fontWeight: 700, color: 'var(--success)' }}>{formatCurrency(d.profit)}</td>
+                                        <td style={{ color: 'var(--info)' }}>{d.stockIn > 0 ? formatCurrency(d.stockIn) : '-'}</td>
                                     </tr>
-                                    {expandedId === tx.id && (
-                                        <tr key={`${tx.id}-detail`}>
-                                            <td colSpan={7} style={{ padding: 0 }}>
-                                                <div style={{
-                                                    background: 'var(--bg-secondary)',
-                                                    padding: 'var(--space-md) var(--space-lg)',
-                                                    borderLeft: `3px solid ${tx.type === 'in' ? 'var(--info)' : 'var(--success)'}`,
-                                                }}>
-                                                    <div style={{ fontSize: 'var(--font-size-xs)', fontWeight: 600, color: 'var(--text-muted)', marginBottom: 'var(--space-sm)', textTransform: 'uppercase' }}>
-                                                        รายละเอียด
-                                                    </div>
+                                ))}
+                            </tbody>
+                        </table>
+                    )
+                ) : (
+                    // All transactions view
+                    filtered.length === 0 ? (
+                        <div className="table-empty"><div className="empty-icon">📋</div><p>ไม่พบรายการ</p></div>
+                    ) : (
+                        <table>
+                            <thead><tr><th>วันที่</th><th>ประเภท</th><th>รายการ</th><th>จำนวน</th><th>มูลค่า</th><th>กำไร</th></tr></thead>
+                            <tbody>
+                                {filtered.map(tx => (
+                                    <>
+                                        <tr key={tx.id} onClick={() => setExpanded(expanded === tx.id ? null : tx.id)} style={{ cursor: 'pointer' }}>
+                                            <td style={{ whiteSpace: 'nowrap' }}>{formatDate(tx.createdAt)}</td>
+                                            <td>
+                                                <span className={`badge ${tx.type === 'in' ? 'badge-info' : 'badge-success'}`}>
+                                                    {tx.type === 'in' ? '📥 นำเข้า' : '🛒 ขาย'}
+                                                </span>
+                                            </td>
+                                            <td style={{ color: 'var(--text-primary)' }}>
+                                                {tx.items.length === 1 ? tx.items[0].productName : `${tx.items.length} รายการ`}
+                                            </td>
+                                            <td style={{ fontWeight: 600 }}>{tx.items.reduce((s, i) => s + i.qty, 0)}</td>
+                                            <td style={{ fontWeight: 700, color: tx.type === 'out' ? 'var(--accent-primary-hover)' : 'var(--info)' }}>
+                                                {formatCurrency(tx.total)}
+                                            </td>
+                                            <td style={{ fontWeight: 700, color: 'var(--success)' }}>
+                                                {tx.type === 'out' ? formatCurrency(calcTxProfit(tx)) : '-'}
+                                            </td>
+                                        </tr>
+                                        {expanded === tx.id && (
+                                            <tr key={tx.id + '-detail'}>
+                                                <td colSpan="6" style={{ padding: 'var(--space-md)', background: 'var(--bg-primary)' }}>
                                                     {tx.items.map((item, i) => (
-                                                        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: 'var(--font-size-sm)' }}>
-                                                            <span>{item.productName} × {item.qty}</span>
+                                                        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: i < tx.items.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                                                            <span>{item.productName} ×{item.qty}</span>
                                                             <span style={{ fontWeight: 600 }}>{formatCurrency(item.qty * item.price)}</span>
                                                         </div>
                                                     ))}
-                                                    {tx.type === 'out' && tx.payment && (
-                                                        <div style={{ marginTop: 'var(--space-sm)', paddingTop: 'var(--space-sm)', borderTop: '1px solid var(--border)' }}>
-                                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--font-size-sm)' }}>
-                                                                <span>รับเงิน</span>
-                                                                <span>{formatCurrency(tx.payment)}</span>
-                                                            </div>
-                                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--font-size-sm)', fontWeight: 700, color: 'var(--success)' }}>
-                                                                <span>เงินทอน</span>
-                                                                <span>{formatCurrency(tx.change)}</span>
-                                                            </div>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    )}
-                                </>
-                            ))}
-                        </tbody>
-                    </table>
+                                                    {tx.discount > 0 && <div style={{ color: 'var(--danger)', marginTop: '4px' }}>ส่วนลด: -{formatCurrency(tx.discount)}</div>}
+                                                    {tx.note && <div style={{ color: 'var(--text-muted)', marginTop: '4px', fontSize: 'var(--font-size-xs)' }}>📝 {tx.note}</div>}
+                                                    {tx.paymentMethod && <div style={{ color: 'var(--text-muted)', fontSize: 'var(--font-size-xs)' }}>💳 {tx.paymentMethod === 'cash' ? 'เงินสด' : tx.paymentMethod === 'transfer' ? 'โอนเงิน' : 'QR'}</div>}
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </>
+                                ))}
+                            </tbody>
+                        </table>
+                    )
                 )}
             </div>
         </div>
