@@ -10,8 +10,10 @@ const navItems = [
     { path: '/customers', icon: '👥', label: 'ลูกค้า' },
     { path: '/shifts', icon: '💰', label: 'รอบขาย' },
     { path: '/promotions', icon: '🏷️', label: 'โปรโมชั่น' },
+    { path: '/expenses', icon: '📉', label: 'รายจ่าย' },
     { path: '/history', icon: '📋', label: 'ประวัติ' },
     { path: '/reports', icon: '🧠', label: 'รายงาน & AI' },
+    { path: '/settings', icon: '⚙️', label: 'ตั้งค่า' },
 ]
 
 export default function Layout({ children }) {

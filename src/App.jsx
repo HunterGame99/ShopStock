@@ -10,6 +10,8 @@ import Reports from './pages/Reports.jsx'
 import Customers from './pages/Customers.jsx'
 import Shifts from './pages/Shifts.jsx'
 import Promotions from './pages/Promotions.jsx'
+import Expenses from './pages/Expenses.jsx'
+import Settings from './pages/Settings.jsx'
 import { seedDemoData } from './lib/storage.js'
 
 const ToastContext = createContext(null)
@@ -51,8 +53,10 @@ function App() {
                         <Route path="/customers" element={<Customers />} />
                         <Route path="/shifts" element={<Shifts />} />
                         <Route path="/promotions" element={<Promotions />} />
+                        <Route path="/expenses" element={<Expenses />} />
                         <Route path="/history" element={<History />} />
                         <Route path="/reports" element={<Reports />} />
+                        <Route path="/settings" element={<Settings />} />
                     </Routes>
                 </Layout>
             </ToastProvider>

@@ -101,21 +101,37 @@ export default function Reports() {
                             </div>
                         </div>
                         <div className="stat-card">
-                            <div className="stat-card-icon orange">📦</div>
+                            <div className="stat-card-icon red">📉</div>
                             <div className="stat-card-info">
-                                <h3>ต้นทุนสินค้า</h3>
-                                <div className="stat-value">{formatCurrency(profitData.costOfGoods)}</div>
+                                <h3>ค่าใช้จ่ายรวม</h3>
+                                <div className="stat-value">{formatCurrency(profitData.expenses || 0)}</div>
+                                <div className="stat-sub">รวมต้นทุน & รายจ่าย</div>
                             </div>
                         </div>
                         <div className="stat-card">
-                            <div className="stat-card-icon blue">📈</div>
+                            <div className="stat-card-icon blue">🧠</div>
                             <div className="stat-card-info">
-                                <h3>กำไรขั้นต้น</h3>
-                                <div className="stat-value" style={{ color: profitData.grossProfit > 0 ? 'var(--success)' : 'var(--danger)' }}>
-                                    {formatCurrency(profitData.grossProfit)}
+                                <h3>กำไรสุทธิ</h3>
+                                <div className="stat-value" style={{ color: profitData.netProfit > 0 ? 'var(--success)' : 'var(--danger)' }}>
+                                    {formatCurrency(profitData.netProfit)}
                                 </div>
-                                <div className="stat-sub">Margin {profitData.margin.toFixed(1)}%</div>
+                                <div className="stat-sub">Net Margin {profitData.netMargin.toFixed(1)}%</div>
                             </div>
+                        </div>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 'var(--space-md)', marginTop: 'var(--space-md)' }}>
+                        <div className="chart-container" style={{ padding: 'var(--space-md)' }}>
+                            <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)' }}>ต้นทุนสินค้า (COGS)</div>
+                            <div style={{ fontSize: 'var(--font-size-lg)', fontWeight: 700 }}>{formatCurrency(profitData.costOfGoods)}</div>
+                        </div>
+                        <div className="chart-container" style={{ padding: 'var(--space-md)' }}>
+                            <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)' }}>กำไรขั้นต้น (Gross)</div>
+                            <div style={{ fontSize: 'var(--font-size-lg)', fontWeight: 700, color: 'var(--success)' }}>{formatCurrency(profitData.grossProfit)}</div>
+                        </div>
+                        <div className="chart-container" style={{ padding: 'var(--space-md)' }}>
+                            <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)' }}>เงินที่ลงทุนซื้อของเพิ่ม</div>
+                            <div style={{ fontSize: 'var(--font-size-lg)', fontWeight: 700, color: 'var(--accent-primary-hover)' }}>{formatCurrency(profitData.stockInvestment)}</div>
                         </div>
                     </div>
 

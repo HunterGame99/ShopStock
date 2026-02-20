@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { getProducts, addTransaction, getCustomers, formatCurrency, formatDate, playSound, getTopProducts, getCategoryEmoji, applyPromotions, getPromotions, CATEGORIES, holdBill, getHeldBills, resumeBill, deleteHeldBill, getRecentSales, addCredit, getUnpaidCredits } from '../lib/storage.js'
+import { getProducts, addTransaction, getCustomers, formatCurrency, formatDate, playSound, getTopProducts, getCategoryEmoji, applyPromotions, getPromotions, CATEGORIES, holdBill, getHeldBills, resumeBill, deleteHeldBill, getRecentSales, addCredit, getUnpaidCredits, getSettings } from '../lib/storage.js'
 import { useToast } from '../App.jsx'
 import BarcodeScanner from '../components/BarcodeScanner.jsx'
 
@@ -23,8 +23,9 @@ export default function StockOut() {
     const [showHeld, setShowHeld] = useState(false)
     const [showRecent, setShowRecent] = useState(false)
     const [showNumpad, setShowNumpad] = useState(false)
-    const [numpadTarget, setNumpadTarget] = useState(null) // 'payment' or 'discount'
+    const [numpadTarget, setNumpadTarget] = useState(null)
     const [numpadValue, setNumpadValue] = useState('')
+    const [settings, setSettings] = useState({ shopName: 'ShopStock', shopAddress: '', shopPhone: '', receiptFooter: 'ขอบคุณที่ใช้บริการ ❤️', vatEnabled: false, vatRate: 7 })
     const toast = useToast()
 
     const reload = () => {
@@ -35,6 +36,7 @@ export default function StockOut() {
         setCustomers(getCustomers())
         setHeldBills(getHeldBills())
         setRecentSales(getRecentSales(5))
+        setSettings(prev => ({ ...prev, ...getSettings() }))
     }
     useEffect(() => { reload() }, [])
 
@@ -96,6 +98,8 @@ export default function StockOut() {
     const manualDiscount = discountType === 'percent' ? subtotal * (Number(discount) || 0) / 100 : (Number(discount) || 0)
     const totalDiscount = manualDiscount + promoDiscount
     const cartTotal = Math.max(0, subtotal - totalDiscount)
+    const vatAmount = settings.vatEnabled ? (cartTotal * settings.vatRate / (100 + settings.vatRate)) : 0
+    const netAmount = cartTotal - vatAmount
     const cartCount = cart.reduce((s, c) => s + c.qty, 0)
     const change = Number(payment) - cartTotal
     const activePromos = getPromotions().filter(p => p.active)
@@ -372,17 +376,26 @@ export default function StockOut() {
                         <div className="modal-header"><h3>🧾 ใบเสร็จ</h3><button className="btn btn-ghost btn-icon" onClick={() => setShowReceipt(null)}>✕</button></div>
                         <div className="modal-body">
                             <div className="receipt">
-                                <h4>🏪 ShopStock</h4>
+                                <h4>🏪 {settings.shopName || 'ShopStock'}</h4>
+                                {settings.shopAddress && <div style={{ textAlign: 'center', fontSize: '10px', whiteSpace: 'pre-wrap' }}>{settings.shopAddress}</div>}
+                                {settings.shopPhone && <div style={{ textAlign: 'center', fontSize: '10px' }}>โทร: {settings.shopPhone}</div>}
                                 <div style={{ textAlign: 'center', fontSize: '10px', marginBottom: '8px' }}>{new Date(showReceipt.createdAt).toLocaleString('th-TH')}</div>
                                 <div className="receipt-line" />
                                 {showReceipt.items.map((item, i) => (<div key={i} className="receipt-row"><span>{item.productName} ×{item.qty}</span><span>{formatCurrency(item.qty * item.price)}</span></div>))}
                                 <div className="receipt-line" />
                                 {showReceipt.discount > 0 && <div className="receipt-row"><span>ส่วนลด</span><span>-{formatCurrency(showReceipt.discount)}</span></div>}
-                                <div className="receipt-row receipt-total"><span>รวม</span><span>{formatCurrency(showReceipt.total)}</span></div>
+                                {settings.vatEnabled && (
+                                    <>
+                                        <div className="receipt-row"><span>ราคาหน้าบิล</span><span>{formatCurrency(cartTotal + totalDiscount)}</span></div>
+                                        <div className="receipt-row"><span>มูลค่าสินค้า (Vat Excl.)</span><span>{formatCurrency(netAmount)}</span></div>
+                                        <div className="receipt-row"><span>ภาษีมูลค่าเพิ่ม ({settings.vatRate}%)</span><span>{formatCurrency(vatAmount)}</span></div>
+                                    </>
+                                )}
+                                <div className="receipt-row receipt-total"><span>ยอดรวมสุทธิ</span><span>{formatCurrency(showReceipt.total)}</span></div>
                                 <div className="receipt-row"><span>ชำระ ({showReceipt.paymentMethod === 'cash' ? 'เงินสด' : showReceipt.paymentMethod === 'transfer' ? 'โอน' : 'QR'})</span><span>{formatCurrency(showReceipt.payment)}</span></div>
                                 {showReceipt.change > 0 && <div className="receipt-row receipt-total"><span>เงินทอน</span><span>{formatCurrency(showReceipt.change)}</span></div>}
                                 <div className="receipt-line" />
-                                <div style={{ textAlign: 'center', fontSize: '10px', color: '#888' }}>ขอบคุณที่ใช้บริการ ❤️</div>
+                                <div style={{ textAlign: 'center', fontSize: '10px', color: '#888' }}>{settings.receiptFooter || 'ขอบคุณที่ใช้บริการ ❤️'}</div>
                             </div>
                         </div>
                         <div className="modal-footer">

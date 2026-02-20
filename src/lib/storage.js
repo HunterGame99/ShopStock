@@ -10,6 +10,7 @@ const PROMOTIONS_KEY = 'shopstock_promotions';
 const TARGETS_KEY = 'shopstock_targets';
 const HELD_BILLS_KEY = 'shopstock_held_bills';
 const CREDITS_KEY = 'shopstock_credits';
+const EXPENSES_KEY = 'shopstock_expenses';
 const SETTINGS_KEY = 'shopstock_settings';
 
 // ===== ID Generator =====
@@ -184,6 +185,43 @@ export function getRecentSales(limit = 5) {
     return getTransactions().filter(tx => tx.type === 'out').slice(0, limit)
 }
 
+// ===== Expenses =====
+export function getExpenses() { return getStore(EXPENSES_KEY) }
+export function saveExpenses(e) { setStore(EXPENSES_KEY, e) }
+
+export function getExpensesBetween(start, end) {
+    const expenses = getExpenses()
+    return expenses.filter(e => {
+        const d = new Date(e.createdAt)
+        return d >= start && d <= end
+    })
+}
+
+export function addExpense(expense) {
+    const expenses = getExpenses()
+    const newExpense = {
+        id: generateId(),
+        ...expense,
+        createdAt: new Date().toISOString()
+    }
+    expenses.unshift(newExpense)
+    saveExpenses(expenses)
+    return newExpense
+}
+
+export function deleteExpense(id) {
+    saveExpenses(getExpenses().filter(e => e.id !== id))
+}
+
+export const EXPENSE_CATEGORIES = [
+    { name: 'ค่าเช่าที่', icon: '🏠' },
+    { name: 'ค่าน้ำ/ค่าไฟ', icon: '⚡' },
+    { name: 'ค่าวัตถุดิบ/ของเสริม', icon: '🛒' },
+    { name: 'เงินเดือนพนักงาน', icon: '👥' },
+    { name: 'ค่าการตลาด', icon: '📢' },
+    { name: 'จิปาถะ', icon: '🛠️' },
+]
+
 // ===== Shifts / Cash Drawer =====
 export function getShifts() { return getStore(SHIFTS_KEY) }
 export function saveShifts(s) { setStore(SHIFTS_KEY, s) }
@@ -344,7 +382,14 @@ export function calcTxProfit(tx) {
 }
 
 export function getTodayRevenue() { return getTodaySales().reduce((s, tx) => s + tx.total, 0) }
-export function getTodayProfit() { return getTodaySales().reduce((s, tx) => s + calcTxProfit(tx), 0) }
+export function getTodayExpenses() {
+    const today = new Date(); today.setHours(0, 0, 0, 0)
+    return getExpenses().filter(e => new Date(e.createdAt) >= today).reduce((s, e) => s + e.amount, 0)
+}
+export function getTodayProfit() {
+    const gross = getTodaySales().reduce((s, tx) => s + calcTxProfit(tx), 0)
+    return gross - getTodayExpenses()
+}
 export function getYesterdayRevenue() { return getYesterdaySales().reduce((s, tx) => s + tx.total, 0) }
 
 export function getRevenueTrend() {
@@ -378,13 +423,16 @@ export function getLast7DaysData() {
     return Array.from({ length: 7 }, (_, i) => {
         const date = new Date(); date.setDate(date.getDate() - (6 - i))
         const dayStr = date.toDateString()
+        const start = new Date(date); start.setHours(0, 0, 0, 0)
+        const end = new Date(date); end.setHours(23, 59, 59, 999)
         const daySales = getTransactions().filter(tx => tx.type === 'out' && new Date(tx.createdAt).toDateString() === dayStr)
         const revenue = daySales.reduce((s, tx) => s + tx.total, 0)
-        const profit = daySales.reduce((s, tx) => s + tx.items.reduce((p, item) => {
+        const grossProfit = daySales.reduce((s, tx) => s + tx.items.reduce((p, item) => {
             const prod = products.find(pr => pr.id === item.productId)
             return p + (item.price - (prod?.costPrice || 0)) * item.qty
         }, 0), 0)
-        return { label: formatDateShort(date.toISOString()), date: date.toDateString(), revenue, profit, count: daySales.length }
+        const dailyExpenses = getExpensesBetween(start, end).reduce((s, e) => s + e.amount, 0)
+        return { label: formatDateShort(date.toISOString()), date: date.toDateString(), revenue, profit: grossProfit - dailyExpenses, count: daySales.length, expenses: dailyExpenses }
     })
 }
 
@@ -452,7 +500,16 @@ export function getProfitReport(days = 30) {
         const p = products.find(pr => pr.id === i.productId); return c + (p?.costPrice || 0) * i.qty
     }, 0), 0)
     const stockIn = txs.filter(tx => tx.type === 'in').reduce((s, tx) => s + tx.total, 0)
-    return { revenue, costOfGoods: cost, grossProfit: revenue - cost, margin: revenue > 0 ? ((revenue - cost) / revenue * 100) : 0, stockInvestment: stockIn, transactionCount: txs.filter(tx => tx.type === 'out').length }
+    const grossProfit = revenue - cost
+    const expenses = getExpenses().filter(e => new Date(e.createdAt) >= since).reduce((s, e) => s + e.amount, 0)
+    const netProfit = grossProfit - expenses
+    return {
+        revenue, costOfGoods: cost, grossProfit, expenses, netProfit,
+        transactionCount: txs.filter(tx => tx.type === 'out').length,
+        margin: revenue > 0 ? (grossProfit / revenue) * 100 : 0,
+        netMargin: revenue > 0 ? (netProfit / revenue) * 100 : 0,
+        stockInvestment: stockIn
+    }
 }
 
 // ===== Backup & Export =====
