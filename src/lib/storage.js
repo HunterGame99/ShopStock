@@ -1,5 +1,5 @@
 // ============================================
-// ShopStock v3.0 — Ultimate Data Layer
+// ShopStock v3.1 — Ultimate Data Layer
 // ============================================
 
 const PRODUCTS_KEY = 'shopstock_products';
@@ -8,6 +8,8 @@ const CUSTOMERS_KEY = 'shopstock_customers';
 const SHIFTS_KEY = 'shopstock_shifts';
 const PROMOTIONS_KEY = 'shopstock_promotions';
 const TARGETS_KEY = 'shopstock_targets';
+const HELD_BILLS_KEY = 'shopstock_held_bills';
+const CREDITS_KEY = 'shopstock_credits';
 const SETTINGS_KEY = 'shopstock_settings';
 
 // ===== ID Generator =====
@@ -96,9 +98,9 @@ export function addTransaction(tx) {
     newTx.items.forEach(item => {
         const product = products.find(p => p.id === item.productId)
         if (product) {
-            product.stock = newTx.type === 'in'
-                ? (product.stock || 0) + item.qty
-                : Math.max(0, (product.stock || 0) - item.qty)
+            if (newTx.type === 'in') product.stock = (product.stock || 0) + item.qty
+            else if (newTx.type === 'out') product.stock = Math.max(0, (product.stock || 0) - item.qty)
+            else if (newTx.type === 'refund') product.stock = (product.stock || 0) + item.qty // Refund restores stock
         }
     })
     saveProducts(products)
@@ -116,6 +118,70 @@ export function addTransaction(tx) {
     }
 
     return newTx
+}
+
+// ===== Refund =====
+export function refundTransaction(txId) {
+    const txs = getTransactions()
+    const original = txs.find(t => t.id === txId)
+    if (!original || original.type !== 'out' || original.refunded) return null
+    // Mark original as refunded
+    original.refunded = true
+    saveTransactions(txs)
+    // Create refund transaction
+    return addTransaction({
+        type: 'refund', items: original.items,
+        total: original.total, note: `คืนสินค้าจากบิล #${txId.slice(-6)}`,
+        originalTxId: txId, customerId: original.customerId,
+    })
+}
+
+// ===== Held Bills =====
+export function getHeldBills() { return getStore(HELD_BILLS_KEY) }
+export function saveHeldBills(bills) { setStore(HELD_BILLS_KEY, bills) }
+
+export function holdBill(cart, customerId, note) {
+    const bills = getHeldBills()
+    bills.push({ id: generateId(), cart, customerId: customerId || null, note: note || '', createdAt: new Date().toISOString() })
+    saveHeldBills(bills)
+}
+
+export function resumeBill(billId) {
+    const bills = getHeldBills()
+    const bill = bills.find(b => b.id === billId)
+    if (!bill) return null
+    saveHeldBills(bills.filter(b => b.id !== billId))
+    return bill
+}
+
+export function deleteHeldBill(billId) {
+    saveHeldBills(getHeldBills().filter(b => b.id !== billId))
+}
+
+// ===== Credits / Debt =====
+export function getCredits() { return getStore(CREDITS_KEY) }
+export function saveCredits(c) { setStore(CREDITS_KEY, c) }
+
+export function addCredit(customerId, amount, items, note) {
+    const credits = getCredits()
+    credits.push({ id: generateId(), customerId, amount, items, note: note || 'เงินเชื่อ', paid: false, createdAt: new Date().toISOString() })
+    saveCredits(credits)
+}
+
+export function payCredit(creditId) {
+    const credits = getCredits()
+    const c = credits.find(cr => cr.id === creditId)
+    if (c) { c.paid = true; c.paidAt = new Date().toISOString() }
+    saveCredits(credits)
+}
+
+export function getUnpaidCredits(customerId) {
+    return getCredits().filter(c => !c.paid && (!customerId || c.customerId === customerId))
+}
+
+// ===== Recent Sales =====
+export function getRecentSales(limit = 5) {
+    return getTransactions().filter(tx => tx.type === 'out').slice(0, limit)
 }
 
 // ===== Shifts / Cash Drawer =====

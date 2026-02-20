@@ -1,6 +1,6 @@
 import { NavLink, useLocation } from 'react-router-dom'
 import { useState, useEffect } from 'react'
-import { getTodayRevenue, getTodayProfit, getNotifications, formatCurrency, getSettings, saveSettings } from '../lib/storage.js'
+import { getTodayRevenue, getTodayProfit, getNotifications, formatCurrency, getSettings, saveSettings, getTodaySales } from '../lib/storage.js'
 
 const navItems = [
     { path: '/', icon: '📊', label: 'แดชบอร์ด' },
@@ -19,15 +19,27 @@ export default function Layout({ children }) {
     const [alerts, setAlerts] = useState([])
     const [todayRevenue, setTodayRevenue] = useState(0)
     const [todayProfit, setTodayProfit] = useState(0)
+    const [todayBills, setTodayBills] = useState(0)
     const [theme, setTheme] = useState(getSettings().theme || 'dark')
     const location = useLocation()
 
-    useEffect(() => {
-        setSidebarOpen(false)
+    const refreshStats = () => {
         setAlerts(getNotifications())
         setTodayRevenue(getTodayRevenue())
         setTodayProfit(getTodayProfit())
+        setTodayBills(getTodaySales().length)
+    }
+
+    useEffect(() => {
+        setSidebarOpen(false)
+        refreshStats()
     }, [location])
+
+    // Live counter — refresh every 15s
+    useEffect(() => {
+        const interval = setInterval(refreshStats, 15000)
+        return () => clearInterval(interval)
+    }, [])
 
     useEffect(() => {
         document.documentElement.setAttribute('data-theme', theme)
@@ -45,13 +57,14 @@ export default function Layout({ children }) {
                     <div className="sidebar-brand-icon">🏪</div>
                     <div>
                         <h1>ShopStock</h1>
-                        <span>Smart Inventory v3.0</span>
+                        <span>Smart Inventory v3.1</span>
                     </div>
                 </div>
 
                 <div className="sidebar-stats">
                     <div className="sidebar-stat"><span>💰 วันนี้</span><span style={{ fontWeight: 700, color: 'var(--accent-primary-hover)' }}>{formatCurrency(todayRevenue)}</span></div>
                     <div className="sidebar-stat"><span>📈 กำไร</span><span style={{ fontWeight: 700, color: 'var(--success)' }}>{formatCurrency(todayProfit)}</span></div>
+                    <div className="sidebar-stat"><span>🧾 บิล</span><span style={{ fontWeight: 700 }}>{todayBills} รายการ</span></div>
                 </div>
 
                 <nav className="sidebar-nav">

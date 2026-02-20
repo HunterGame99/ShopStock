@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { getTransactions, formatCurrency, formatDate, exportCSV, calcTxProfit } from '../lib/storage.js'
+import { getTransactions, formatCurrency, formatDate, exportCSV, calcTxProfit, refundTransaction } from '../lib/storage.js'
 import { useToast } from '../App.jsx'
 
 export default function History() {
@@ -11,7 +11,15 @@ export default function History() {
     const [viewMode, setViewMode] = useState('all') // 'all', 'daily', 'monthly'
     const toast = useToast()
 
-    useEffect(() => { setTransactions(getTransactions()) }, [])
+    const reload = () => setTransactions(getTransactions())
+    useEffect(() => { reload() }, [])
+
+    const handleRefund = (txId) => {
+        if (!confirm('ยืนยันคืนสินค้า? สต็อกจะถูกเพิ่มกลับ')) return
+        const result = refundTransaction(txId)
+        if (result) { toast('↩️ คืนสินค้าสำเร็จ! สต็อกกลับแล้ว'); reload() }
+        else { toast('ไม่สามารถคืนได้ (อาจคืนแล้ว)', 'error') }
+    }
 
     const filtered = transactions.filter(tx => {
         const matchType = !filterType || tx.type === filterType
@@ -88,6 +96,7 @@ export default function History() {
                             <option value="">ทุกประเภท</option>
                             <option value="in">📥 นำเข้า</option>
                             <option value="out">🛒 ขาย</option>
+                            <option value="refund">↩️ คืนสินค้า</option>
                         </select>
                         <input className="form-control" type="date" value={filterDate} onChange={e => setFilterDate(e.target.value)} style={{ width: 'auto', padding: '8px 12px' }} />
                         <div style={{ display: 'flex', gap: '2px', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)', padding: '2px' }}>
@@ -124,16 +133,17 @@ export default function History() {
                         <div className="table-empty"><div className="empty-icon">📋</div><p>ไม่พบรายการ</p></div>
                     ) : (
                         <table>
-                            <thead><tr><th>วันที่</th><th>ประเภท</th><th>รายการ</th><th>จำนวน</th><th>มูลค่า</th><th>กำไร</th></tr></thead>
+                            <thead><tr><th>วันที่</th><th>ประเภท</th><th>รายการ</th><th>จำนวน</th><th>มูลค่า</th><th>กำไร</th><th></th></tr></thead>
                             <tbody>
                                 {filtered.map(tx => (
                                     <>
                                         <tr key={tx.id} onClick={() => setExpanded(expanded === tx.id ? null : tx.id)} style={{ cursor: 'pointer' }}>
                                             <td style={{ whiteSpace: 'nowrap' }}>{formatDate(tx.createdAt)}</td>
                                             <td>
-                                                <span className={`badge ${tx.type === 'in' ? 'badge-info' : 'badge-success'}`}>
-                                                    {tx.type === 'in' ? '📥 นำเข้า' : '🛒 ขาย'}
+                                                <span className={`badge ${tx.type === 'in' ? 'badge-info' : tx.type === 'refund' ? 'badge-warning' : tx.refunded ? 'badge-danger' : 'badge-success'}`}>
+                                                    {tx.type === 'in' ? '📥 นำเข้า' : tx.type === 'refund' ? '↩️ คืน' : '🛒 ขาย'}
                                                 </span>
+                                                {tx.refunded && <span className="badge badge-danger" style={{ marginLeft: '4px', fontSize: '0.5rem' }}>คืนแล้ว</span>}
                                             </td>
                                             <td style={{ color: 'var(--text-primary)' }}>
                                                 {tx.items.length === 1 ? tx.items[0].productName : `${tx.items.length} รายการ`}
@@ -144,6 +154,11 @@ export default function History() {
                                             </td>
                                             <td style={{ fontWeight: 700, color: 'var(--success)' }}>
                                                 {tx.type === 'out' ? formatCurrency(calcTxProfit(tx)) : '-'}
+                                            </td>
+                                            <td>
+                                                {tx.type === 'out' && !tx.refunded && (
+                                                    <button className="btn btn-ghost btn-sm" onClick={(e) => { e.stopPropagation(); handleRefund(tx.id) }} title="คืนสินค้า" style={{ color: 'var(--warning)' }}>↩️</button>
+                                                )}
                                             </td>
                                         </tr>
                                         {expanded === tx.id && (
