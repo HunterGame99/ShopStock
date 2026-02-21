@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { useAuth, useShift } from '../App'
 import { getNotifications, getTodayRevenue, getTodayProfit, getTodaySales, formatCurrency, getSettings, saveSettings } from '../lib/storage'
+import { canAccessPage, canSeeProfit } from '../lib/permissions.js'
 
 const navItems = [
     { path: '/', icon: '📊', label: 'แดชบอร์ด' },
@@ -27,6 +28,8 @@ export default function Layout({ children }) {
     const { user, logout } = useAuth()
     const { activeShift } = useShift()
     const location = useLocation()
+    const role = user?.role || 'staff'
+    const visibleNavItems = navItems.filter(item => canAccessPage(role, item.path))
 
     const refreshStats = () => {
         setAlerts(getNotifications())
@@ -82,12 +85,12 @@ export default function Layout({ children }) {
 
                 <div className="sidebar-stats">
                     <div className="sidebar-stat"><span>💰 วันนี้</span><span style={{ fontWeight: 700, color: 'var(--accent-primary-hover)' }}>{formatCurrency(todayRevenue)}</span></div>
-                    <div className="sidebar-stat"><span>📈 กำไร</span><span style={{ fontWeight: 700, color: 'var(--success)' }}>{formatCurrency(todayProfit)}</span></div>
+                    {canSeeProfit(role) && <div className="sidebar-stat"><span>📈 กำไร</span><span style={{ fontWeight: 700, color: 'var(--success)' }}>{formatCurrency(todayProfit)}</span></div>}
                     <div className="sidebar-stat"><span>🧾 บิล</span><span style={{ fontWeight: 700 }}>{todayBills} รายการ</span></div>
                 </div>
 
                 <nav className="sidebar-nav">
-                    {navItems.map(item => (
+                    {visibleNavItems.map(item => (
                         <NavLink key={item.path} to={item.path} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} end={item.path === '/'}>
                             <span className="nav-icon">{item.icon}</span>
                             <span>{item.label}</span>

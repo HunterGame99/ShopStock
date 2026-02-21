@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { getActiveShift, openShift, closeShift, getShifts, getTodaySales, formatCurrency, formatDate } from '../lib/storage.js'
-import { useShift, useToast } from '../App.jsx'
+import { useShift, useToast, useAuth } from '../App.jsx'
+import { isAdmin } from '../lib/permissions.js'
 
 export default function Shifts() {
     const { activeShift, setActiveShift } = useShift()
@@ -10,11 +11,17 @@ export default function Shifts() {
     const [showClose, setShowClose] = useState(false)
     const [closedReport, setClosedReport] = useState(null)
     const toast = useToast()
+    const { user } = useAuth()
+    const role = user?.role || 'staff'
 
     const reload = () => {
         const active = getActiveShift()
         setActiveShift(active)
-        setPastShifts(getShifts().filter(s => s.closedAt).slice(0, 10))
+        let shifts = getShifts().filter(s => s.closedAt)
+        if (!isAdmin(role)) {
+            shifts = shifts.filter(s => s.openedBy === user?.userName)
+        }
+        setPastShifts(shifts.slice(0, 10))
     }
     useEffect(() => { reload() }, [])
 

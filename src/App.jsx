@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useState, useCallback, createContext, useContext, useEffect } from 'react'
 import Layout from './components/Layout.jsx'
 import Dashboard from './pages/Dashboard.jsx'
@@ -13,6 +13,7 @@ import Promotions from './pages/Promotions.jsx'
 import Expenses from './pages/Expenses.jsx'
 import Settings from './pages/Settings.jsx'
 import { getProducts, seedDemoData, getCurrentSession, authenticate, logout, getActiveShift, openShift, getUsers, initSync } from './lib/storage.js'
+import { isAdmin } from './lib/permissions.js'
 
 const ToastContext = createContext(null)
 const AuthContext = createContext(null)
@@ -160,11 +161,11 @@ function App() {
                                     <Route path="/stock-out" element={<StockOut />} />
                                     <Route path="/customers" element={<Customers />} />
                                     <Route path="/shifts" element={<Shifts />} />
-                                    <Route path="/promotions" element={<Promotions />} />
-                                    <Route path="/expenses" element={<Expenses />} />
+                                    <Route path="/promotions" element={isAdmin(user?.role) ? <Promotions /> : <Navigate to="/" />} />
+                                    <Route path="/expenses" element={isAdmin(user?.role) ? <Expenses /> : <Navigate to="/" />} />
                                     <Route path="/history" element={<History />} />
-                                    <Route path="/reports" element={<Reports />} />
-                                    <Route path="/settings" element={<Settings />} />
+                                    <Route path="/reports" element={isAdmin(user?.role) ? <Reports /> : <Navigate to="/" />} />
+                                    <Route path="/settings" element={isAdmin(user?.role) ? <Settings /> : <Navigate to="/" />} />
                                     <Route path="*" element={<NotFound />} />
                                 </Routes>
                             </Layout>

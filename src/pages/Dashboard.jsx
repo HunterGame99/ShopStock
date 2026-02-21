@@ -1,12 +1,15 @@
 import { useState, useEffect } from 'react'
 import { getProducts, getTodaySales, getLowStockProducts, getTotalStockValue, getTotalRetailValue, formatCurrency, formatNumber, getTodayRevenue, getTodayProfit, getTodayExpenses, getRevenueTrend, getTopProducts, getSlowProducts, getLast7DaysData, getTodayTarget, setDailyTarget, getWeekComparison, getExpiringProducts, getNotifications } from '../lib/storage.js'
-import { useToast } from '../App.jsx'
+import { useToast, useAuth } from '../App.jsx'
+import { canSeeProfit } from '../lib/permissions.js'
 
 export default function Dashboard() {
     const [data, setData] = useState(null)
     const [targetInput, setTargetInput] = useState('')
     const [showTargetInput, setShowTargetInput] = useState(false)
     const toast = useToast()
+    const { user } = useAuth()
+    const role = user?.role || 'staff'
 
     const loadData = () => {
         const products = getProducts()
@@ -94,22 +97,30 @@ export default function Dashboard() {
                         </div>
                     </div>
                 </div>
-                <div className="stat-card">
+                {canSeeProfit(role) && <div className="stat-card">
                     <div className="stat-card-icon blue">🧠</div>
                     <div className="stat-card-info">
                         <h3>กำไรสุทธิวันนี้</h3>
                         <div className="stat-value" style={{ color: data.todayProfit >= 0 ? 'var(--success)' : 'var(--danger)' }}>{formatCurrency(data.todayProfit)}</div>
                         <div className="stat-sub">{data.todaySales.length} รายการ</div>
                     </div>
-                </div>
-                <div className="stat-card" style={{ cursor: 'pointer' }}>
+                </div>}
+                {canSeeProfit(role) && <div className="stat-card" style={{ cursor: 'pointer' }}>
                     <div className="stat-card-icon red">📉</div>
                     <div className="stat-card-info" onClick={() => window.location.href = '/expenses'}>
                         <h3>รายจ่ายวันนี้</h3>
                         <div className="stat-value" style={{ color: 'var(--danger)' }}>{formatCurrency(data.todayExpenses)}</div>
                         <div className="stat-sub">จิ้มเพื่อดูรายละเอียด</div>
                     </div>
-                </div>
+                </div>}
+                {!canSeeProfit(role) && <div className="stat-card">
+                    <div className="stat-card-icon blue">🧾</div>
+                    <div className="stat-card-info">
+                        <h3>บิลวันนี้</h3>
+                        <div className="stat-value">{data.todaySales.length}</div>
+                        <div className="stat-sub">รายการ</div>
+                    </div>
+                </div>}
             </div>
 
             {showTargetInput && (

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { getProducts, addProduct, updateProduct, deleteProduct, formatCurrency, CATEGORIES, getCategoryEmoji } from '../lib/storage.js'
-import { useToast } from '../App.jsx'
+import { useToast, useAuth } from '../App.jsx'
+import { canEditProducts, canSeeProfit } from '../lib/permissions.js'
 
 const emptyForm = { name: '', sku: '', barcode: '', category: '', emoji: '📦', costPrice: '', sellPrice: '', stock: '', minStock: '5' }
 
@@ -14,6 +15,8 @@ export default function Products() {
     const [form, setForm] = useState(emptyForm)
     const [deleteConfirm, setDeleteConfirm] = useState(null)
     const toast = useToast()
+    const { user } = useAuth()
+    const role = user?.role || 'staff'
 
     const reload = () => setProducts(getProducts())
     useEffect(() => { reload() }, [])
@@ -104,7 +107,7 @@ export default function Products() {
                             <option value="price">ราคา: สูง→ต่ำ</option>
                             <option value="margin">กำไร: สูง→ต่ำ</option>
                         </select>
-                        <button className="btn btn-primary" onClick={openAdd}>➕ เพิ่มสินค้า</button>
+                        {canEditProducts(role) && <button className="btn btn-primary" onClick={openAdd}>➕ เพิ่มสินค้า</button>}
                     </div>
                 </div>
 
@@ -121,12 +124,12 @@ export default function Products() {
                                 <th>สินค้า</th>
                                 <th>SKU / Barcode</th>
                                 <th>หมวดหมู่</th>
-                                <th>ราคาทุน</th>
+                                {canSeeProfit(role) && <th>ราคาทุน</th>}
                                 <th>ราคาขาย</th>
-                                <th>กำไร</th>
+                                {canSeeProfit(role) && <th>กำไร</th>}
                                 <th>สต็อก</th>
                                 <th>สถานะ</th>
-                                <th>จัดการ</th>
+                                {canEditProducts(role) && <th>จัดการ</th>}
                             </tr>
                         </thead>
                         <tbody>
@@ -141,14 +144,14 @@ export default function Products() {
                                             {p.barcode && <><br /><code style={{ fontSize: 'var(--font-size-xs)', color: 'var(--accent-primary-hover)' }}>📷 {p.barcode}</code></>}
                                         </td>
                                         <td><span className="badge badge-purple">{p.category}</span></td>
-                                        <td>{formatCurrency(p.costPrice)}</td>
+                                        {canSeeProfit(role) && <td>{formatCurrency(p.costPrice)}</td>}
                                         <td style={{ fontWeight: 600, color: 'var(--accent-primary-hover)' }}>{formatCurrency(p.sellPrice)}</td>
-                                        <td>
+                                        {canSeeProfit(role) && <td>
                                             <span style={{ fontWeight: 700, color: margin >= 30 ? 'var(--success)' : margin >= 15 ? 'var(--warning)' : 'var(--danger)' }}>
                                                 {formatCurrency(p.sellPrice - p.costPrice)}
                                             </span>
                                             <br /><span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)' }}>{margin.toFixed(0)}%</span>
-                                        </td>
+                                        </td>}
                                         <td>
                                             <div style={{
                                                 width: '100%', height: '6px', background: 'var(--border)', borderRadius: '3px', position: 'relative', minWidth: '60px'
@@ -167,10 +170,10 @@ export default function Products() {
                                                     : <span className="badge badge-success">ปกติ</span>}
                                         </td>
                                         <td>
-                                            <div className="table-actions">
+                                            {canEditProducts(role) && <div className="table-actions">
                                                 <button className="btn btn-ghost btn-sm" onClick={() => openEdit(p)}>✏️</button>
                                                 <button className="btn btn-ghost btn-sm" onClick={() => setDeleteConfirm(p.id)}>🗑️</button>
-                                            </div>
+                                            </div>}
                                         </td>
                                     </tr>
                                 )

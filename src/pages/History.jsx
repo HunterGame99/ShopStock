@@ -1,6 +1,7 @@
 import { useState, useEffect, Fragment } from 'react'
 import { getTransactions, formatCurrency, formatDate, exportCSV, calcTxProfit, refundTransaction } from '../lib/storage.js'
-import { useToast } from '../App.jsx'
+import { useToast, useAuth } from '../App.jsx'
+import { isAdmin } from '../lib/permissions.js'
 
 export default function History() {
     const [transactions, setTransactions] = useState([])
@@ -10,8 +11,17 @@ export default function History() {
     const [expanded, setExpanded] = useState(null)
     const [viewMode, setViewMode] = useState('all') // 'all', 'daily', 'monthly'
     const toast = useToast()
+    const { user } = useAuth()
+    const role = user?.role || 'staff'
 
-    const reload = () => setTransactions(getTransactions())
+    const reload = () => {
+        let txs = getTransactions()
+        if (!isAdmin(role)) {
+            const today = new Date().toDateString()
+            txs = txs.filter(t => new Date(t.date).toDateString() === today)
+        }
+        setTransactions(txs)
+    }
     useEffect(() => { reload() }, [])
 
     const handleRefund = (txId) => {
