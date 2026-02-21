@@ -76,7 +76,6 @@ export default function Layout({ children }) {
                             <div className="user-name">{user?.userName}</div>
                             <div className="user-role">{user?.role === 'admin' ? 'เจ้าของร้าน' : 'พนักงาน'}</div>
                         </div>
-                        <button className="logout-btn" onClick={logout} title="ออกจากระบบ">🚪</button>
                     </div>
                     <div className={`shift-status ${activeShift ? 'open' : 'closed'}`}>
                         {activeShift ? '🟢 กำลังเปิดกะ' : '🔴 ยังไม่เริ่มกะ'}
