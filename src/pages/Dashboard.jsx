@@ -51,9 +51,17 @@ export default function Dashboard() {
 
     return (
         <div className="animate-in">
-            <div className="page-header">
-                <h2>📊 แดชบอร์ด</h2>
-                <p>ภาพรวมแบบ Real-time • อัพเดตทุก 15 วินาที</p>
+            <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                    <h2>📊 แดชบอร์ด</h2>
+                    <p>ภาพรวมแบบ Real-time • อัพเดตทุก 15 วินาที</p>
+                </div>
+                <button className="btn btn-ghost btn-sm" onClick={() => {
+                    setTargetInput(data.target || '')
+                    setShowTargetInput(!showTargetInput)
+                }} style={{ whiteSpace: 'nowrap' }}>
+                    🎯 {data.target > 0 ? 'แก้เป้า' : 'ตั้งเป้ายอดขาย'}
+                </button>
             </div>
 
             {/* Notifications Bar */}
@@ -69,15 +77,38 @@ export default function Dashboard() {
 
             {/* Sales Target Progress */}
             {data.target > 0 && (
-                <div className="chart-container" style={{ marginBottom: 'var(--space-lg)', padding: 'var(--space-md) var(--space-lg)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-sm)' }}>
-                        <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>🎯 เป้ายอดขายวันนี้</span>
-                        <span style={{ fontWeight: 700, color: targetProgress >= 100 ? 'var(--success)' : 'var(--accent-primary-hover)' }}>
-                            {formatCurrency(data.todayRevenue)} / {formatCurrency(data.target)} ({targetProgress.toFixed(0)}%)
-                        </span>
+                <div className="chart-container" style={{
+                    marginBottom: 'var(--space-lg)',
+                    padding: 'var(--space-md) var(--space-lg)',
+                    background: 'var(--accent-gradient)',
+                    color: 'white',
+                    border: 'none',
+                    position: 'relative',
+                    overflow: 'hidden'
+                }}>
+                    {/* Subtle background decoration */}
+                    <div style={{ position: 'absolute', right: '-20px', top: '-20px', fontSize: '5rem', opacity: 0.1, pointerEvents: 'none' }}>🎯</div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-sm)', position: 'relative', zIndex: 1 }}>
+                        <span style={{ fontWeight: 800 }}>🎯 เป้าหมายวันนี้</span>
+                        <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontWeight: 800, fontSize: '1.2rem' }}>
+                                {formatCurrency(data.todayRevenue)} / {formatCurrency(data.target)}
+                            </div>
+                            <div style={{ fontSize: 'var(--font-size-xs)', opacity: 0.9 }}>
+                                {targetProgress >= 100 ? '🚀 ทะลุเป้าแล้ว!' : `เหลืออีก ${formatCurrency(data.target - data.todayRevenue)}`}
+                            </div>
+                        </div>
                     </div>
-                    <div style={{ height: '10px', background: 'var(--border)', borderRadius: '5px', overflow: 'hidden' }}>
-                        <div style={{ height: '100%', width: `${targetProgress}%`, background: targetProgress >= 100 ? 'linear-gradient(90deg, #22c55e, #16a34a)' : 'var(--accent-gradient)', borderRadius: '5px', transition: 'width 0.5s ease' }} />
+                    <div style={{ height: '12px', background: 'rgba(255,255,255,0.2)', borderRadius: '6px', overflow: 'hidden', position: 'relative', zIndex: 1, border: '1px solid rgba(255,255,255,0.1)' }}>
+                        <div style={{
+                            height: '100%',
+                            width: `${targetProgress}%`,
+                            background: 'white',
+                            boxShadow: '0 0 15px rgba(255,255,255,0.5)',
+                            borderRadius: '6px',
+                            transition: 'width 0.8s cubic-bezier(0.34, 1.56, 0.64, 1)'
+                        }} />
                     </div>
                 </div>
             )}
@@ -125,9 +156,13 @@ export default function Dashboard() {
             </div>
 
             {showTargetInput && (
-                <div style={{ display: 'flex', gap: 'var(--space-sm)', marginBottom: 'var(--space-lg)', alignItems: 'center' }}>
-                    <input className="form-control" type="number" min="0" value={targetInput} onChange={e => setTargetInput(e.target.value)} placeholder="ยอดเป้าหมาย (บาท)" style={{ width: '200px' }} autoFocus />
-                    <button className="btn btn-primary btn-sm" onClick={handleSetTarget}>🎯 ตั้งเป้า</button>
+                <div className="chart-container animate-in" style={{ marginBottom: 'var(--space-lg)', border: '1px solid var(--accent-primary)' }}>
+                    <div className="chart-header"><h3>{data.target > 0 ? '🎯 แก้ไขเป้าหมาย' : '🎯 ตั้งเป้าหมายใหม่'}</h3></div>
+                    <div style={{ display: 'flex', gap: 'var(--space-sm)', alignItems: 'center' }}>
+                        <input className="form-control" type="number" min="0" value={targetInput} onChange={e => setTargetInput(e.target.value)} placeholder="ยอดเป้าหมาย (บาท)" style={{ flex: 1 }} autoFocus />
+                        <button className="btn btn-primary" onClick={handleSetTarget}>บันทึก</button>
+                        <button className="btn btn-ghost" onClick={() => setShowTargetInput(false)}>ยกเลิก</button>
+                    </div>
                 </div>
             )}
 
