@@ -4,18 +4,38 @@ import { useAuth, useShift } from '../App'
 import { getNotifications, getTodayRevenue, getTodayProfit, getTodaySales, formatCurrency, getSettings, saveSettings } from '../lib/storage'
 import { canAccessPage, canSeeProfit } from '../lib/permissions.js'
 
-const navItems = [
-    { path: '/', icon: '📊', label: 'แดชบอร์ด' },
-    { path: '/products', icon: '📦', label: 'สินค้า' },
-    { path: '/stock-in', icon: '📥', label: 'รับเข้า' },
-    { path: '/stock-out', icon: '🛒', label: 'ขายสินค้า' },
-    { path: '/customers', icon: '👥', label: 'ลูกค้า' },
-    { path: '/shifts', icon: '💰', label: 'รอบขาย' },
-    { path: '/promotions', icon: '🏷️', label: 'โปรโมชั่น' },
-    { path: '/expenses', icon: '📉', label: 'รายจ่าย' },
-    { path: '/history', icon: '📋', label: 'ประวัติ' },
-    { path: '/reports', icon: '🧠', label: 'รายงาน & AI' },
-    { path: '/settings', icon: '⚙️', label: 'ตั้งค่า' },
+const navGroups = [
+    {
+        label: 'หลัก', items: [
+            { path: '/', icon: '📊', label: 'แดชบอร์ด' },
+        ]
+    },
+    {
+        label: 'สต็อก', items: [
+            { path: '/products', icon: '📦', label: 'สินค้า' },
+            { path: '/stock-in', icon: '📥', label: 'รับเข้า' },
+            { path: '/stock-out', icon: '🛒', label: 'ขายสินค้า' },
+        ]
+    },
+    {
+        label: 'จัดการ', items: [
+            { path: '/customers', icon: '👥', label: 'ลูกค้า' },
+            { path: '/shifts', icon: '💰', label: 'รอบขาย' },
+            { path: '/promotions', icon: '🏷️', label: 'โปรโมชั่น' },
+        ]
+    },
+    {
+        label: 'การเงิน', items: [
+            { path: '/expenses', icon: '📉', label: 'รายจ่าย' },
+            { path: '/history', icon: '📋', label: 'ประวัติ' },
+            { path: '/reports', icon: '🧠', label: 'รายงาน & AI' },
+        ]
+    },
+    {
+        label: 'ระบบ', items: [
+            { path: '/settings', icon: '⚙️', label: 'ตั้งค่า' },
+        ]
+    },
 ]
 
 export default function Layout({ children }) {
@@ -29,7 +49,10 @@ export default function Layout({ children }) {
     const { activeShift } = useShift()
     const location = useLocation()
     const role = user?.role || 'staff'
-    const visibleNavItems = navItems.filter(item => canAccessPage(role, item.path))
+    const visibleGroups = navGroups.map(g => ({
+        ...g,
+        items: g.items.filter(item => canAccessPage(role, item.path))
+    })).filter(g => g.items.length > 0)
 
     const refreshStats = () => {
         setAlerts(getNotifications())
@@ -89,12 +112,18 @@ export default function Layout({ children }) {
                 </div>
 
                 <nav className="sidebar-nav">
-                    {visibleNavItems.map(item => (
-                        <NavLink key={item.path} to={item.path} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} end={item.path === '/'}>
-                            <span className="nav-icon">{item.icon}</span>
-                            <span>{item.label}</span>
-                            {item.path === '/' && alerts.length > 0 && <span className="notification-dot">{alerts.length}</span>}
-                        </NavLink>
+                    {visibleGroups.map((group, gi) => (
+                        <div key={gi} className="nav-group">
+                            {gi > 0 && <div className="nav-divider" />}
+                            <div className="nav-group-label">{group.label}</div>
+                            {group.items.map(item => (
+                                <NavLink key={item.path} to={item.path} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} end={item.path === '/'}>
+                                    <span className="nav-icon">{item.icon}</span>
+                                    <span>{item.label}</span>
+                                    {item.path === '/' && alerts.length > 0 && <span className="notification-dot">{alerts.length}</span>}
+                                </NavLink>
+                            ))}
+                        </div>
                     ))}
                 </nav>
 

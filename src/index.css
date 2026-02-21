@@ -158,8 +158,30 @@ body {
 
 /* Sidebar Nav */
 .sidebar-nav {
-  padding: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
   flex: 1;
+  overflow-y: auto;
+}
+
+.nav-group {
+  margin-bottom: var(--space-xs);
+}
+
+.nav-group-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 4px var(--space-md);
+  margin-bottom: 2px;
+}
+
+.nav-divider {
+  height: 1px;
+  background: var(--border);
+  margin: var(--space-xs) var(--space-md);
+  opacity: 0.5;
 }
 
 .nav-link {
