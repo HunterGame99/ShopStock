@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { getProducts, getTodaySales, getLowStockProducts, getTotalStockValue, getTotalRetailValue, formatCurrency, formatNumber, getTodayRevenue, getTodayProfit, getTodayExpenses, getRevenueTrend, getTopProducts, getSlowProducts, getLast7DaysData, getTodayTarget, setDailyTarget, getWeekComparison, getExpiringProducts, getNotifications } from '../lib/storage.js'
+import { getProducts, getTransactions, getTodaySales, getLowStockProducts, getTotalStockValue, getTotalRetailValue, formatCurrency, formatNumber, formatDate, getTodayRevenue, getTodayProfit, getTodayExpenses, getRevenueTrend, getTopProducts, getSlowProducts, getLast7DaysData, getTodayTarget, setDailyTarget, getWeekComparison, getExpiringProducts, getNotifications } from '../lib/storage.js'
 import { useToast, useAuth } from '../App.jsx'
 import { canSeeProfit } from '../lib/permissions.js'
 
@@ -29,8 +29,9 @@ export default function Dashboard() {
         const weekComp = getWeekComparison()
         const expiring = getExpiringProducts(7)
         const notifs = getNotifications()
+        const recentActivity = getTransactions().slice(0, 8)
 
-        setData({ products, todaySales, todayRevenue, todayProfit, todayExpenses, trend, lowStock, stockValue, retailValue, topProducts, slowProducts, last7Days, totalItems, target, weekComp, expiring, notifs })
+        setData({ products, todaySales, todayRevenue, todayProfit, todayExpenses, trend, lowStock, stockValue, retailValue, topProducts, slowProducts, last7Days, totalItems, target, weekComp, expiring, notifs, recentActivity })
     }
 
     useEffect(() => {
@@ -193,6 +194,44 @@ export default function Dashboard() {
                         </div>
                     )}
                 </div>
+            </div>
+
+            {/* Activity Log */}
+            <div className="chart-container" style={{ marginTop: 'var(--space-lg)' }}>
+                <div className="chart-header">
+                    <h3>📝 Activity Log</h3>
+                    <span className="badge badge-info">{data.recentActivity.length} ล่าสุด</span>
+                </div>
+                {data.recentActivity.length === 0 ? (
+                    <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 'var(--space-xl)' }}>
+                        <div style={{ fontSize: '2rem', marginBottom: '8px' }}>📋</div>ยังไม่มีกิจกรรม
+                    </div>
+                ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                        {data.recentActivity.map(tx => {
+                            const icon = tx.type === 'in' ? '📥' : tx.type === 'refund' ? '↩️' : '🛒'
+                            const label = tx.type === 'in' ? 'รับเข้า' : tx.type === 'refund' ? 'คืนสินค้า' : 'ขาย'
+                            const color = tx.type === 'in' ? 'var(--info)' : tx.type === 'refund' ? 'var(--warning)' : 'var(--success)'
+                            const itemsSummary = tx.items?.map(i => `${i.name || i.productId} ×${i.qty}`).join(', ')
+                            return (
+                                <div key={tx.id} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', padding: '8px var(--space-md)', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)', fontSize: 'var(--font-size-sm)' }}>
+                                    <span style={{ fontSize: '1.2rem' }}>{icon}</span>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ display: 'flex', gap: 'var(--space-xs)', alignItems: 'center', flexWrap: 'wrap' }}>
+                                            <span className="badge" style={{ background: `${color}20`, color }}>{label}</span>
+                                            <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{tx.staffName || 'System'}</span>
+                                        </div>
+                                        <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{itemsSummary}</div>
+                                    </div>
+                                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                                        <div style={{ fontWeight: 700, color: 'var(--accent-primary-hover)' }}>{formatCurrency(tx.total)}</div>
+                                        <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{formatDate(tx.date)}</div>
+                                    </div>
+                                </div>
+                            )
+                        })}
+                    </div>
+                )}
             </div>
         </div>
     )
