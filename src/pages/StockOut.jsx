@@ -25,6 +25,7 @@ export default function StockOut() {
     const [showHeld, setShowHeld] = useState(false)
     const [showRecent, setShowRecent] = useState(false)
     const [showNumpad, setShowNumpad] = useState(false)
+    const [showPortalQR, setShowPortalQR] = useState(false)
     const [numpadTarget, setNumpadTarget] = useState(null)
     const [numpadValue, setNumpadValue] = useState('')
     const [pointsUsed, setPointsUsed] = useState(0)
@@ -281,6 +282,10 @@ export default function StockOut() {
 
                     {/* Customer */}
                     <div style={{ padding: '6px var(--space-md)', borderBottom: '1px solid var(--border)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>ข้อมูลลูกค้า</span>
+                            <button className="btn btn-ghost btn-sm" onClick={() => setShowPortalQR(true)} style={{ fontSize: '10px', color: 'var(--accent-primary)', padding: '2px 4px', height: 'auto' }}>📱 QR เช็คแต้ม</button>
+                        </div>
                         <select className="form-control" value={selectedCustomer} onChange={e => setSelectedCustomer(e.target.value)} style={{ padding: '6px 10px', fontSize: 'var(--font-size-xs)' }}>
                             <option value="">👤 ลูกค้าทั่วไป</option>
                             {customers.map(c => <option key={c.id} value={c.id}>👤 {c.name} {c.phone ? `(${c.phone})` : ''}</option>)}
@@ -545,6 +550,31 @@ export default function StockOut() {
                                 ))}
                             </div>
                             <button className="btn btn-success btn-lg" onClick={() => numpadPress('✓')} style={{ width: '100%', justifyContent: 'center', marginTop: 'var(--space-md)' }}>✅ ตกลง</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Portal QR Modal */}
+            {showPortalQR && (
+                <div className="modal-overlay" onClick={() => setShowPortalQR(false)}>
+                    <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '300px', textAlign: 'center' }}>
+                        <div className="modal-header">
+                            <h3>สแกนเพื่อเช็คแต้ม</h3>
+                            <button className="btn btn-ghost btn-icon" onClick={() => setShowPortalQR(false)}>✕</button>
+                        </div>
+                        <div className="modal-body">
+                            <div style={{ background: 'white', padding: '15px', borderRadius: '12px', marginBottom: 'var(--space-md)' }}>
+                                <img
+                                    src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(window.location.origin + '/portal')}`}
+                                    alt="Portal QR"
+                                    style={{ width: '100%', height: 'auto', display: 'block' }}
+                                />
+                            </div>
+                            <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--text-muted)' }}>ให้ลูกค้าใช้มือถือสแกนเพื่อดูคะแนนสะสมและโปรโมชั่นด้วยตนเอง</p>
+                            <div style={{ background: 'var(--bg-secondary)', padding: '8px', borderRadius: '4px', fontSize: '10px', wordBreak: 'break-all', marginTop: '10px' }}>
+                                {window.location.origin}/portal
+                            </div>
                         </div>
                     </div>
                 </div>

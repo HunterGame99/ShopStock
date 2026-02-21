@@ -12,6 +12,7 @@ import Shifts from './pages/Shifts.jsx'
 import Promotions from './pages/Promotions.jsx'
 import Expenses from './pages/Expenses.jsx'
 import Settings from './pages/Settings.jsx'
+import CustomerPortal from './pages/CustomerPortal.jsx'
 import { getProducts, seedDemoData, getCurrentSession, authenticate, logout, getActiveShift, openShift, getUsers, initSync } from './lib/storage.js'
 import { isAdmin } from './lib/permissions.js'
 
@@ -152,26 +153,31 @@ function App() {
             <ToastProvider>
                 <AuthContext.Provider value={{ user, setUser, logout: handleLogout }}>
                     <ShiftContext.Provider value={{ activeShift, setActiveShift }}>
-                        {!user ? (
-                            <LoginOverlay onLogin={setUser} />
-                        ) : (
-                            <Layout>
-                                <Routes>
-                                    <Route path="/" element={<Dashboard />} />
-                                    <Route path="/products" element={<Products />} />
-                                    <Route path="/stock-in" element={<StockIn />} />
-                                    <Route path="/stock-out" element={<StockOut />} />
-                                    <Route path="/customers" element={<Customers />} />
-                                    <Route path="/shifts" element={<Shifts />} />
-                                    <Route path="/promotions" element={isAdmin(user?.role) ? <Promotions /> : <Navigate to="/" />} />
-                                    <Route path="/expenses" element={isAdmin(user?.role) ? <Expenses /> : <Navigate to="/" />} />
-                                    <Route path="/history" element={<History />} />
-                                    <Route path="/reports" element={isAdmin(user?.role) ? <Reports /> : <Navigate to="/" />} />
-                                    <Route path="/settings" element={isAdmin(user?.role) ? <Settings /> : <Navigate to="/" />} />
-                                    <Route path="*" element={<NotFound />} />
-                                </Routes>
-                            </Layout>
-                        )}
+                        <Routes>
+                            <Route path="/portal" element={<CustomerPortal />} />
+                            <Route path="*" element={
+                                !user ? (
+                                    <LoginOverlay onLogin={setUser} />
+                                ) : (
+                                    <Layout>
+                                        <Routes>
+                                            <Route path="/" element={<Dashboard />} />
+                                            <Route path="/products" element={<Products />} />
+                                            <Route path="/stock-in" element={<StockIn />} />
+                                            <Route path="/stock-out" element={<StockOut />} />
+                                            <Route path="/customers" element={<Customers />} />
+                                            <Route path="/shifts" element={<Shifts />} />
+                                            <Route path="/promotions" element={isAdmin(user?.role) ? <Promotions /> : <Navigate to="/" />} />
+                                            <Route path="/expenses" element={isAdmin(user?.role) ? <Expenses /> : <Navigate to="/" />} />
+                                            <Route path="/history" element={<History />} />
+                                            <Route path="/reports" element={isAdmin(user?.role) ? <Reports /> : <Navigate to="/" />} />
+                                            <Route path="/settings" element={isAdmin(user?.role) ? <Settings /> : <Navigate to="/" />} />
+                                            <Route path="*" element={<NotFound />} />
+                                        </Routes>
+                                    </Layout>
+                                )
+                            } />
+                        </Routes>
                     </ShiftContext.Provider>
                 </AuthContext.Provider>
             </ToastProvider>
