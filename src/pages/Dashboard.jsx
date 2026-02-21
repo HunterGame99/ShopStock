@@ -56,12 +56,14 @@ export default function Dashboard() {
                     <h2>📊 แดชบอร์ด</h2>
                     <p>ภาพรวมแบบ Real-time • อัพเดตทุก 15 วินาที</p>
                 </div>
-                <button className="btn btn-ghost btn-sm" onClick={() => {
-                    setTargetInput(data.target || '')
-                    setShowTargetInput(!showTargetInput)
-                }} style={{ whiteSpace: 'nowrap' }}>
-                    🎯 {data.target > 0 ? 'แก้เป้า' : 'ตั้งเป้ายอดขาย'}
-                </button>
+                {canAccessPage(role, '/settings') && (
+                    <button className="btn btn-ghost btn-sm animate-bounce-subtle" onClick={() => {
+                        setTargetInput(data.target || '')
+                        setShowTargetInput(!showTargetInput)
+                    }} style={{ whiteSpace: 'nowrap' }}>
+                        🎯 {data.target > 0 ? 'แก้เป้า' : 'ตั้งเป้ายอดขาย'}
+                    </button>
+                )}
             </div>
 
             {/* Notifications Bar */}

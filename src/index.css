@@ -1408,6 +1408,20 @@ tbody tr:last-child td {
   border-color: rgba(239, 68, 68, 0.4);
 }
 
+@keyframes bounce-subtle {
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+.animate-bounce-subtle {
+  animation: bounce-subtle 2s ease-in-out infinite;
+}
+
 .shift-status {
   padding: 4px 10px;
   border-radius: 20px;
