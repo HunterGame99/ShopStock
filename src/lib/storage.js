@@ -401,6 +401,26 @@ export function applyPromotions(cartItems) {
                     totalDiscount += item.price * item.qty * (promo.value / 100)
                 }
             })
+        } else if (promo.type === 'buy_1_get_1') {
+            cartItems.forEach(item => {
+                if (!promo.productId || item.productId === promo.productId) {
+                    // For every 2 items, 1 is free (discounted by its full price)
+                    const freeItems = Math.floor(item.qty / 2)
+                    totalDiscount += freeItems * item.price
+                }
+            })
+        } else if (promo.type === 'bundle_price') {
+            cartItems.forEach(item => {
+                if (!promo.productId || item.productId === promo.productId) {
+                    // e.g. Buy 3 for 100 THB. (promo.minQty = 3, promo.bundlePrice = 100)
+                    const bundles = Math.floor(item.qty / promo.minQty)
+                    if (bundles > 0) {
+                        const normalPriceForBundle = promo.minQty * item.price
+                        const discountPerBundle = normalPriceForBundle - promo.bundlePrice
+                        totalDiscount += bundles * Math.max(0, discountPerBundle)
+                    }
+                }
+            })
         }
     })
     return Math.round(totalDiscount * 100) / 100
@@ -655,18 +675,97 @@ export function importData(jsonString) {
 }
 
 export function exportCSV(transactions) {
-    const headers = ['วันที่', 'ประเภท', 'สินค้า', 'จำนวน', 'มูลค่า', 'หมายเหตุ']
+    const headers = ['วันที่', 'ประเภท', 'รายการ', 'จำนวนรวม', 'ยอดรวม', 'หมายเหตุ']
     const rows = transactions.map(tx => [
-        new Date(tx.createdAt).toLocaleString('th-TH'), tx.type === 'in' ? 'นำเข้า' : 'ขาย',
-        tx.items.map(i => `${i.productName}×${i.qty}`).join(' | '),
-        tx.items.reduce((s, i) => s + i.qty, 0), tx.total, tx.note || '',
+        `"${new Date(tx.createdAt).toLocaleString('th-TH')}"`, 
+        `"${tx.type === 'in' ? 'นำเข้าสต็อก' : 'ขาย'}"`,
+        `"${tx.items.map(i => `${i.productName}×${i.qty}`).join(' | ')}"`,
+        tx.items.reduce((s, i) => s + i.qty, 0), 
+        tx.total, 
+        `"${tx.note || ''}"`
     ])
-    const csv = [headers, ...rows].map(r => r.map(c => `"${c}"`).join(',')).join('\n')
+    const csv = [headers, ...rows].map(r => r.join(',')).join('\n')
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
-    const a = document.createElement('a'); a.href = url; a.download = `shopstock_${new Date().toISOString().split('T')[0]}.csv`; a.click(); URL.revokeObjectURL(url)
+    const a = document.createElement('a'); a.href = url; a.download = `sales_report_${new Date().toISOString().split('T')[0]}.csv`; a.click(); URL.revokeObjectURL(url)
 }
 
+export function exportCSVProducts() {
+    const products = getProducts()
+    const headers = ['ID', 'Name', 'Category', 'SKU', 'Barcode', 'CostPrice', 'SellPrice', 'Stock', 'MinStock', 'Emoji']
+    const rows = products.map(p => [
+        p.id, `"${p.name || ''}"`, `"${p.category || ''}"`, p.sku || '', p.barcode || '', 
+        p.costPrice || 0, p.sellPrice || 0, p.stock || 0, p.minStock || 0, p.emoji || ''
+    ])
+    const csv = [headers, ...rows].map(r => r.join(',')).join('\n')
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a'); a.href = url; a.download = `products_export_${new Date().toISOString().split('T')[0]}.csv`; a.click(); URL.revokeObjectURL(url)
+}
+
+export function importCSVProducts(csvString) {
+    try {
+        const lines = csvString.split(/\r?\n/).filter(l => l.trim() !== '')
+        if (lines.length <= 1) return { success: false, msg: 'No data found' }
+        
+        // Simple CSV parser that handles quotes properly
+        const parseLine = (line) => {
+            const result = []; let current = ''; let inQuotes = false;
+            for (let i = 0; i < line.length; i++) {
+                if (line[i] === '"') { inQuotes = !inQuotes; }
+                else if (line[i] === ',' && !inQuotes) { result.push(current); current = ''; }
+                else { current += line[i]; }
+            }
+            result.push(current); return result;
+        }
+
+        const headers = parseLine(lines[0]).map(h => h.trim().toLowerCase())
+        const products = getProducts()
+        let importedCount = 0
+        let updatedCount = 0
+
+        for (let i = 1; i < lines.length; i++) {
+            const values = parseLine(lines[i])
+            if (values.length !== headers.length) continue
+            
+            const p = {}
+            headers.forEach((h, idx) => {
+                let val = values[idx].replace(/^"|"$/g, '').trim()
+                if (h === 'costprice' || h === 'sellprice' || h === 'stock' || h === 'minstock') val = Number(val) || 0
+                p[h] = val
+            })
+
+            if (!p.name || !p.sellprice) continue // Skip invalid rows
+
+            const existingIndex = products.findIndex(x => (p.id && x.id === p.id) || (p.sku && x.sku === p.sku))
+            
+            if (existingIndex >= 0) {
+                // Update
+                products[existingIndex] = {
+                    ...products[existingIndex],
+                    name: p.name, category: p.category || 'ทั่วไป', 
+                    barcode: p.barcode, costPrice: p.costprice, sellPrice: p.sellprice,
+                    stock: p.stock, minStock: p.minstock, emoji: p.emoji || '📦'
+                }
+                updatedCount++
+            } else {
+                // Create new
+                products.push({
+                    id: p.id || generateId(),
+                    name: p.name, category: p.category || 'ทั่วไป', sku: p.sku || `SKU${Date.now()}${i}`,
+                    barcode: p.barcode, costPrice: p.costprice, sellPrice: p.sellprice,
+                    stock: p.stock, minStock: p.minstock, emoji: p.emoji || '📦', createdAt: new Date().toISOString()
+                })
+                importedCount++
+            }
+        }
+        
+        saveProducts(products)
+        return { success: true, msg: `Imported ${importedCount}, Updated ${updatedCount}` }
+    } catch (err) {
+        return { success: false, msg: err.message }
+    }
+}
 // ===== Sound Effects =====
 export function playSound(type = 'scan') {
     try {

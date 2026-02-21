@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { getProducts, addTransaction, getCustomers, formatCurrency, formatDate, playSound, getTopProducts, getCategoryEmoji, applyPromotions, getPromotions, CATEGORIES, holdBill, getHeldBills, resumeBill, deleteHeldBill, getRecentSales, addCredit, getUnpaidCredits, getSettings, redeemPoints } from '../lib/storage.js'
 import { useToast, useShift } from '../App.jsx'
 import BarcodeScanner from '../components/BarcodeScanner.jsx'
+import ReceiptPrinter from '../components/ReceiptPrinter.jsx'
 import { Link } from 'react-router-dom'
 
 export default function StockOut() {
@@ -456,13 +457,19 @@ export default function StockOut() {
                                 <div style={{ textAlign: 'center', fontSize: '10px', color: '#888' }}>{settings.receiptFooter || 'ขอบคุณที่ใช้บริการ ❤️'}</div>
                             </div>
                         </div>
-                        <div className="modal-footer">
-                            <button className="btn btn-secondary" onClick={() => window.print()}>🖨️ พิมพ์</button>
-                            <button className="btn btn-primary" onClick={() => setShowReceipt(null)}>ปิด</button>
+                        <div className="modal-footer" style={{ display: 'flex', gap: '8px' }}>
+                            <button className="btn btn-secondary" onClick={() => setShowReceipt(null)} style={{ flex: 1 }}>ปิดหน้าต่าง</button>
+                            <button className="btn btn-primary" onClick={() => {
+                                const printBtn = document.getElementById('trigger-print')
+                                if (printBtn) printBtn.click()
+                            }} style={{ flex: 1 }}>🖨️ พิมพ์ใบเสร็จ</button>
                         </div>
                     </div>
                 </div>
             )}
+
+            {/* Hidden Thermal Printer Element */}
+            <ReceiptPrinter receiptData={showReceipt} settings={settings} />
 
             {/* Held Bills Modal */}
             {showHeld && (

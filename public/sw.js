@@ -1,23 +1,49 @@
-const CACHE_NAME = 'shopstock-v3'
-const ASSETS = ['/', '/index.html']
+const CACHE_NAME = 'shopstock-cache-v3.4';
+const urlsToCache = [
+  '/',
+  '/index.html',
+  '/manifest.json',
+  '/vite.svg'
+];
 
-self.addEventListener('install', (e) => {
-    e.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(ASSETS)))
-    self.skipWaiting()
-})
+self.addEventListener('install', event => {
+  event.waitUntil(
+    caches.open(CACHE_NAME)
+      .then(cache => {
+        return cache.addAll(urlsToCache);
+      })
+  );
+  self.skipWaiting();
+});
 
-self.addEventListener('activate', (e) => {
-    e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))))
-    self.clients.claim()
-})
+self.addEventListener('fetch', event => {
+  event.respondWith(
+    caches.match(event.request)
+      .then(response => {
+        // Cache hit - return response
+        if (response) {
+          return response;
+        }
+        return fetch(event.request).catch(() => {
+            // Handle offline fallback if necessary, but ShopStock relies on LocalStorage heavily
+            // so we don't need excessive network fallback routing
+        });
+      })
+  );
+});
 
-self.addEventListener('fetch', (e) => {
-    if (e.request.method !== 'GET') return
-    e.respondWith(
-        fetch(e.request).then(res => {
-            const clone = res.clone()
-            caches.open(CACHE_NAME).then(cache => cache.put(e.request, clone))
-            return res
-        }).catch(() => caches.match(e.request))
-    )
-})
+self.addEventListener('activate', event => {
+  const cacheWhitelist = [CACHE_NAME];
+  event.waitUntil(
+    caches.keys().then(cacheNames => {
+      return Promise.all(
+        cacheNames.map(cacheName => {
+          if (cacheWhitelist.indexOf(cacheName) === -1) {
+            return caches.delete(cacheName);
+          }
+        })
+      );
+    })
+  );
+  self.clients.claim();
+});

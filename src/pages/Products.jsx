@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
-import { getProducts, addProduct, updateProduct, deleteProduct, formatCurrency, CATEGORIES, getCategoryEmoji } from '../lib/storage.js'
+import { getProducts, addProduct, updateProduct, deleteProduct, formatCurrency, CATEGORIES, getCategoryEmoji, exportCSVProducts, importCSVProducts } from '../lib/storage.js'
 import { uploadProductImage } from '../lib/supabaseStorage.js'
 import { useToast, useAuth } from '../App.jsx'
 import { canEditProducts, canSeeProfit } from '../lib/permissions.js'
+import Barcode from 'react-barcode'
 
 const emptyForm = { name: '', sku: '', barcode: '', category: '', emoji: '📦', imageUrl: '', costPrice: '', sellPrice: '', stock: '', minStock: '5' }
 
@@ -17,6 +18,7 @@ export default function Products() {
     const [imageFile, setImageFile] = useState(null)
     const [isUploading, setIsUploading] = useState(false)
     const [deleteConfirm, setDeleteConfirm] = useState(null)
+    const [printBarcodeProduct, setPrintBarcodeProduct] = useState(null)
     const toast = useToast()
     const { user } = useAuth()
     const role = user?.role || 'staff'
@@ -156,7 +158,33 @@ export default function Products() {
                             <option value="price">ราคา: สูง→ต่ำ</option>
                             <option value="margin">กำไร: สูง→ต่ำ</option>
                         </select>
-                        {canEditProducts(role) && <button className="btn btn-primary" onClick={openAdd}>➕ เพิ่มสินค้า</button>}
+                        {canEditProducts(role) && (
+                            <>
+                                <button className="btn btn-secondary" onClick={() => exportCSVProducts()} title="ส่งออก CSV">📤</button>
+                                <button className="btn btn-secondary" onClick={() => {
+                                    const input = document.createElement('input')
+                                    input.type = 'file'
+                                    input.accept = '.csv'
+                                    input.onchange = (e) => {
+                                        const file = e.target.files[0]
+                                        if (!file) return
+                                        const reader = new FileReader()
+                                        reader.onload = (e) => {
+                                            const res = importCSVProducts(e.target.result)
+                                            if (res.success) {
+                                                toast(res.msg, 'success')
+                                                reload()
+                                            } else {
+                                                toast(res.msg, 'error')
+                                            }
+                                        }
+                                        reader.readAsText(file)
+                                    }
+                                    input.click()
+                                }} title="นำเข้า CSV">📥</button>
+                                <button className="btn btn-primary" onClick={openAdd}>➕</button>
+                            </>
+                        )}
                     </div>
                 </div>
 
@@ -225,9 +253,10 @@ export default function Products() {
                                                     : <span className="badge badge-success">ปกติ</span>}
                                         </td>
                                         <td>
-                                            {canEditProducts(role) && <div className="table-actions">
-                                                <button className="btn btn-ghost btn-sm" onClick={() => openEdit(p)}>✏️</button>
-                                                <button className="btn btn-ghost btn-sm" onClick={() => setDeleteConfirm(p.id)}>🗑️</button>
+                                            {canEditProducts(role) && <div className="table-actions" style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+                                                <button className="btn btn-primary btn-sm" onClick={() => openEdit(p)} style={{ padding: '6px' }}>✏️</button>
+                                                <button className="btn btn-secondary btn-sm" onClick={() => setPrintBarcodeProduct(p)} style={{ padding: '6px' }} title="พิมพ์บาร์โค้ด">🏷️</button>
+                                                <button className="btn btn-danger btn-sm" onClick={() => setDeleteConfirm(p.id)} style={{ padding: '6px' }}>🗑️</button>
                                             </div>}
                                         </td>
                                     </tr>
@@ -358,6 +387,92 @@ export default function Products() {
                         <div className="modal-footer">
                             <button className="btn btn-secondary" onClick={() => setDeleteConfirm(null)}>ยกเลิก</button>
                             <button className="btn btn-danger" onClick={() => handleDelete(deleteConfirm)}>🗑️ ลบสินค้า</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Print Barcode Modal */}
+            {printBarcodeProduct && (
+                <div className="modal-overlay" onClick={() => setPrintBarcodeProduct(null)}>
+                    <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '350px', textAlign: 'center' }}>
+                        <div className="modal-header">
+                            <h3>🏷️ พิมพ์บาร์โค้ด</h3>
+                            <button className="btn btn-ghost btn-icon" onClick={() => setPrintBarcodeProduct(null)}>✕</button>
+                        </div>
+                        <div className="modal-body">
+                            <div id="barcode-printable-area" style={{ background: 'white', padding: '20px', borderRadius: '8px', marginBottom: 'var(--space-md)' }}>
+                                <div style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '5px', color: 'black' }}>
+                                    {printBarcodeProduct.name}
+                                </div>
+                                <Barcode
+                                    value={printBarcodeProduct.barcode || printBarcodeProduct.sku}
+                                    format="CODE128"
+                                    width={1.5}
+                                    height={50}
+                                    displayValue={true}
+                                    fontSize={12}
+                                    margin={0}
+                                />
+                                <div style={{ fontSize: '14px', marginTop: '5px', fontWeight: 'bold', color: 'black' }}>
+                                    ราคา: {formatCurrency(printBarcodeProduct.sellPrice)}
+                                </div>
+                            </div>
+                            <p style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)' }}>* รองรับเฉพาะตัวเลขและอักษรภาษาอังกฤษเท่านั้น</p>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={() => setPrintBarcodeProduct(null)}>ปิด</button>
+                            <button className="btn btn-primary" onClick={() => {
+                                const printContent = document.getElementById('barcode-printable-area').innerHTML
+                                const originalBody = document.body.innerHTML
+                                document.body.innerHTML = `<div style="text-align:center; padding: 10px;">${printContent}</div>`
+                                window.print()
+                                document.body.innerHTML = originalBody
+                                window.location.reload()
+                            }}>🖨️ พิมพ์ดวงนี้</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Print Barcode Modal */}
+            {printBarcodeProduct && (
+                <div className="modal-overlay" onClick={() => setPrintBarcodeProduct(null)}>
+                    <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '350px', textAlign: 'center' }}>
+                        <div className="modal-header">
+                            <h3>🏷️ พิมพ์บาร์โค้ด</h3>
+                            <button className="btn btn-ghost btn-icon" onClick={() => setPrintBarcodeProduct(null)}>✕</button>
+                        </div>
+                        <div className="modal-body">
+                            <div id="barcode-printable-area" style={{ background: 'white', padding: '20px', borderRadius: '8px', marginBottom: 'var(--space-md)' }}>
+                                <div style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '5px', color: 'black' }}>
+                                    {printBarcodeProduct.name}
+                                </div>
+                                <Barcode
+                                    value={printBarcodeProduct.barcode || printBarcodeProduct.sku}
+                                    format="CODE128"
+                                    width={1.5}
+                                    height={50}
+                                    displayValue={true}
+                                    fontSize={12}
+                                    margin={0}
+                                />
+                                <div style={{ fontSize: '14px', marginTop: '5px', fontWeight: 'bold', color: 'black' }}>
+                                    ราคา: {formatCurrency(printBarcodeProduct.sellPrice)}
+                                </div>
+                            </div>
+                            <p style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)' }}>* รองรับเฉพาะตัวเลขและอักษรภาษาอังกฤษเท่านั้น</p>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={() => setPrintBarcodeProduct(null)}>ปิด</button>
+                            <button className="btn btn-primary" onClick={() => {
+                                const printContent = document.getElementById('barcode-printable-area').innerHTML
+                                const originalBody = document.body.innerHTML
+                                document.body.innerHTML = `<div style="text-align:center; padding: 10px;">${printContent}</div>`
+                                window.print()
+                                document.body.innerHTML = originalBody
+                                window.location.reload()
+                            }}>🖨️ พิมพ์ดวงนี้</button>
                         </div>
                     </div>
                 </div>

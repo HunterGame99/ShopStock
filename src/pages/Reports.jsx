@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
-import { getProducts, getTransactions, getProfitReport, getTopProducts, getSlowProducts, getReorderSuggestions, predictNextWeekSales, getLast7DaysData, exportData, importData, formatCurrency, formatNumber } from '../lib/storage.js'
+import { getProducts, getTransactions, getProfitReport, getTopProducts, getSlowProducts, getReorderSuggestions, predictNextWeekSales, getLast7DaysData, exportData, importData, exportCSV, formatCurrency, formatNumber } from '../lib/storage.js'
 import { useToast } from '../App.jsx'
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts'
 
 export default function Reports() {
     const [tab, setTab] = useState('profit')
@@ -137,23 +138,25 @@ export default function Reports() {
 
                     {/* Profit chart */}
                     <div className="chart-container" style={{ marginTop: 'var(--space-lg)' }}>
-                        <div className="chart-header"><h3>📊 กำไรรายวัน</h3></div>
-                        <div className="simple-chart">
-                            {last7Days.map((day, i) => {
-                                const maxVal = Math.max(...last7Days.map(d => d.profit), 1)
-                                return (
-                                    <div key={i} className="chart-bar">
-                                        <span className="bar-value" style={{ color: day.profit > 0 ? 'var(--success)' : 'var(--text-muted)' }}>
-                                            {day.profit > 0 ? formatCurrency(day.profit) : '-'}
-                                        </span>
-                                        <div className="bar" style={{
-                                            height: `${(day.profit / maxVal) * 100}%`,
-                                            background: day.profit > 0 ? 'linear-gradient(135deg, #22c55e, #16a34a)' : 'var(--border)',
-                                        }} />
-                                        <span className="bar-label">{day.label}</span>
-                                    </div>
-                                )
-                            })}
+                        <div className="chart-header"><h3>📊 กำไรรายวัน (7 วันย้อนหลัง)</h3></div>
+                        <div style={{ width: '100%', height: '300px', marginTop: 'var(--space-md)' }}>
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={last7Days} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#ffffff15" vertical={false} />
+                                    <XAxis dataKey="label" stroke="var(--text-muted)" fontSize={12} tickLine={false} axisLine={false} />
+                                    <YAxis stroke="var(--text-muted)" fontSize={12} tickLine={false} axisLine={false} tickFormatter={value => formatCurrency(value).replace('฿', '')} />
+                                    <Tooltip
+                                        cursor={{ fill: 'rgba(255,255,255,0.05)' }}
+                                        contentStyle={{ backgroundColor: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)' }}
+                                        formatter={(value, name) => [formatCurrency(value), name === 'profit' ? 'กำไรขั้นต้น' : name === 'expenses' ? 'รายจ่าย' : 'รายได้']}
+                                        labelStyle={{ color: 'var(--text-primary)', fontWeight: 'bold', marginBottom: '4px' }}
+                                    />
+                                    <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
+                                    <Bar dataKey="revenue" name="รายได้" fill="var(--accent-primary)" radius={[4, 4, 0, 0]} />
+                                    <Bar dataKey="profit" name="กำไรขั้นต้น" fill="var(--success)" radius={[4, 4, 0, 0]} />
+                                    <Bar dataKey="expenses" name="รายจ่าย" fill="var(--danger)" radius={[4, 4, 0, 0]} />
+                                </BarChart>
+                            </ResponsiveContainer>
                         </div>
                     </div>
                 </>
@@ -313,10 +316,13 @@ export default function Reports() {
                         </p>
                         <div style={{ display: 'flex', gap: 'var(--space-md)', flexWrap: 'wrap' }}>
                             <button className="btn btn-primary btn-lg" onClick={handleExportBackup}>
-                                📤 สำรองข้อมูล (Export JSON)
+                                📤 สำรองข้อมูล (JSON)
                             </button>
                             <button className="btn btn-secondary btn-lg" onClick={handleImportBackup}>
-                                📥 กู้คืนข้อมูล (Import JSON)
+                                📥 กู้คืนข้อมูล (JSON)
+                            </button>
+                            <button className="btn btn-secondary btn-lg" onClick={() => exportCSV(getTransactions())}>
+                                📊 ส่งออกยอดขาย (CSV)
                             </button>
                         </div>
                         <div style={{ marginTop: 'var(--space-lg)', padding: 'var(--space-md)', background: 'var(--bg-card)', borderRadius: 'var(--radius-md)', fontSize: 'var(--font-size-sm)' }}>
