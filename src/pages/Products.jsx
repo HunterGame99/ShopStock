@@ -82,11 +82,43 @@ export default function Products() {
     // Emoji picker
     const emojis = ['📦', '🥤', '🍜', '🍿', '☕', '🍚', '🧴', '🪥', '🧼', '✏️', '🖊️', '📁', '💊', '🧻', '🫗', '🍞', '🥛', '🍫', '🧃', '🎈']
 
+    const totalItems = products.length
+    const totalStock = products.reduce((sum, p) => sum + (p.stock || 0), 0)
+    const outOfStock = products.filter(p => !p.stock || p.stock <= 0).length
+    const lowStockCount = products.filter(p => p.stock > 0 && p.stock <= (p.minStock || 5)).length
+
     return (
         <div className="animate-in">
-            <div className="page-header">
-                <h2>📦 จัดการสินค้า</h2>
-                <p>เพิ่ม แก้ไข ลบ และค้นหาสินค้า — {products.length} รายการ</p>
+            <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 'var(--space-md)' }}>
+                <div>
+                    <h2>📦 สินค้า</h2>
+                    <p>จัดการรายการสินค้าและสต็อกทั้งหมด</p>
+                </div>
+            </div>
+
+            {/* Product Stats Overview */}
+            <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+                gap: 'var(--space-md)',
+                marginBottom: 'var(--space-lg)'
+            }}>
+                <div className="chart-container" style={{ padding: 'var(--space-md)', textAlign: 'center', background: 'rgba(99, 102, 241, 0.05)' }}>
+                    <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)', marginBottom: '4px' }}>รายการสินค้า</div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--accent-primary-hover)' }}>{totalItems}</div>
+                </div>
+                <div className="chart-container" style={{ padding: 'var(--space-md)', textAlign: 'center', background: 'rgba(6, 182, 212, 0.05)' }}>
+                    <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)', marginBottom: '4px' }}>สต็อกรวม</div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--info)' }}>{totalStock}</div>
+                </div>
+                <div className="chart-container" style={{ padding: 'var(--space-md)', textAlign: 'center', background: outOfStock > 0 ? 'rgba(239, 68, 68, 0.05)' : 'var(--bg-secondary)' }}>
+                    <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)', marginBottom: '4px' }}>สินค้าหมด</div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: 800, color: outOfStock > 0 ? 'var(--danger)' : 'var(--text-muted)' }}>{outOfStock}</div>
+                </div>
+                <div className="chart-container" style={{ padding: 'var(--space-md)', textAlign: 'center', background: lowStockCount > 0 ? 'rgba(245, 158, 11, 0.05)' : 'var(--bg-secondary)' }}>
+                    <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)', marginBottom: '4px' }}>สต็อกน้อย</div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: 800, color: lowStockCount > 0 ? 'var(--warning)' : 'var(--text-muted)' }}>{lowStockCount}</div>
+                </div>
             </div>
 
             <div className="table-container">
