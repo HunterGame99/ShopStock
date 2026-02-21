@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { useAuth, useShift } from '../App'
-import { getNotifications, getTodayRevenue, getTodayProfit, getTodaySales, formatCurrency, getSettings, saveSettings } from '../lib/storage'
+import { getNotifications, getTodayRevenue, getTodayProfit, getTodaySales, formatCurrency, getSettings, saveSettings, getBranches, getActiveBranchId, setActiveBranchId } from '../lib/storage'
 import { canAccessPage, canSeeProfit } from '../lib/permissions.js'
 
 const navGroups = [
@@ -50,6 +50,8 @@ export default function Layout({ children }) {
     const { activeShift } = useShift()
     const location = useLocation()
     const role = user?.role || 'staff'
+    const [branches, setBranches] = useState([])
+    const [activeBranch, setActiveBranch] = useState(null)
     const visibleGroups = navGroups.map(g => ({
         ...g,
         items: g.items.filter(item => canAccessPage(role, item.path))
@@ -65,6 +67,9 @@ export default function Layout({ children }) {
     useEffect(() => {
         setSidebarOpen(false)
         refreshStats()
+        const allBranches = getBranches()
+        setBranches(allBranches)
+        setActiveBranch(allBranches.find(b => b.id === getActiveBranchId()) || allBranches[0])
     }, [location])
 
     // Live counter — refresh every 15s
@@ -111,6 +116,29 @@ export default function Layout({ children }) {
                         </div>
                     )}
                 </div>
+
+                {!isCollapsed && (
+                    <div style={{ padding: '0 var(--space-md) var(--space-md) var(--space-md)' }}>
+                        <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '4px' }}>สาขาที่ทำงาน:</div>
+                        {role === 'admin' ? (
+                            <select
+                                className="form-control"
+                                style={{ padding: '4px 8px', fontSize: '12px', background: 'var(--bg-card)' }}
+                                value={activeBranch?.id || 'default'}
+                                onChange={(e) => {
+                                    setActiveBranchId(e.target.value)
+                                    window.location.reload()
+                                }}
+                            >
+                                {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                            </select>
+                        ) : (
+                            <div style={{ background: 'var(--bg-card)', padding: '4px 8px', borderRadius: '4px', fontSize: '12px', color: 'var(--text-primary)', border: '1px solid var(--border)' }}>
+                                {activeBranch?.name || 'สาขาหลัก'}
+                            </div>
+                        )}
+                    </div>
+                )}
 
                 {!isCollapsed && (
                     <div className="sidebar-stats">

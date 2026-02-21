@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { getProducts, getTransactions, getTodaySales, getLowStockProducts, getTotalStockValue, getTotalRetailValue, formatCurrency, formatNumber, formatDate, getTodayRevenue, getTodayProfit, getTodayExpenses, getRevenueTrend, getTopProducts, getSlowProducts, getLast7DaysData, getTodayTarget, setDailyTarget, getWeekComparison, getExpiringProducts, getNotifications } from '../lib/storage.js'
 import { useToast, useAuth } from '../App.jsx'
 import { canSeeProfit, canAccessPage } from '../lib/permissions.js'
+import AIAssistant from '../components/AIAssistant.jsx'
 
 export default function Dashboard() {
     const [data, setData] = useState(null)
@@ -231,6 +232,11 @@ export default function Dashboard() {
                         </div>
                     )}
                 </div>
+            </div>
+
+            {/* AI Assistant */}
+            <div style={{ marginTop: 'var(--space-lg)' }}>
+                <AIAssistant />
             </div>
 
             {/* Activity Log */}

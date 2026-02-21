@@ -109,10 +109,18 @@ export async function pushCredits(credits) { await replaceAll('credits', credits
 export async function pushUsers(users) { await replaceAll('users', users) }
 
 export async function pushSettings(settings) {
-    const snakeRow = toSnake(settings)
-    snakeRow.id = 'default'
-    const { error } = await supabase.from('settings').upsert(snakeRow, { onConflict: 'id' })
-    if (error) console.error('[Supabase] upsert settings:', error.message)
+    if (Array.isArray(settings)) {
+        const snakeRows = settings.map(toSnake)
+        for (const row of snakeRows) {
+            const { error } = await supabase.from('settings').upsert(row, { onConflict: 'id' })
+            if (error) console.error('[Supabase] upsert settings:', error.message)
+        }
+    } else {
+        const snakeRow = toSnake(settings)
+        snakeRow.id = 'default'
+        const { error } = await supabase.from('settings').upsert(snakeRow, { onConflict: 'id' })
+        if (error) console.error('[Supabase] upsert settings:', error.message)
+    }
 }
 
 // ===== Sync all from Supabase → returns data for localStorage =====

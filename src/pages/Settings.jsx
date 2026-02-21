@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { getSettings, saveSettings, getUsers, saveUsers, generateId } from '../lib/storage.js'
+import { getSettings, saveSettings, getUsers, saveUsers, generateId, getBranches, saveBranches } from '../lib/storage.js'
 import { useAuth, useToast } from '../App.jsx'
 
 export default function Settings() {
@@ -11,17 +11,25 @@ export default function Settings() {
         receiptFooter: 'ขอบคุณที่ใช้บริการ ❤️',
         vatEnabled: false,
         vatRate: 7,
+        vatRate: 7,
         theme: 'dark',
+        telegramBotToken: '',
+        telegramChatId: '',
     })
+    const [branches, setBranches] = useState([])
+    const [showBranchModal, setShowBranchModal] = useState(false)
+    const [branchForm, setBranchForm] = useState({ name: '', address: '', phone: '' })
+
     const [users, setUsers] = useState([])
     const [showUserModal, setShowUserModal] = useState(false)
     const [editingUser, setEditingUser] = useState(null)
-    const [userForm, setUserForm] = useState({ name: '', pin: '', role: 'staff' })
+    const [userForm, setUserForm] = useState({ name: '', pin: '', role: 'staff', branchId: 'default' })
     const toast = useToast()
 
     useEffect(() => {
         setSettings(prev => ({ ...prev, ...getSettings() }))
         setUsers(getUsers())
+        setBranches(getBranches())
     }, [])
 
     const handleSave = () => {
@@ -44,7 +52,7 @@ export default function Settings() {
         setUsers(newUsers)
         setShowUserModal(false)
         setEditingUser(null)
-        setUserForm({ name: '', pin: '', role: 'staff' })
+        setUserForm({ name: '', pin: '', role: 'staff', branchId: 'default' })
         toast('บันทึกข้อมูลพนักงานแล้ว 👤')
     }
 
@@ -56,6 +64,16 @@ export default function Settings() {
             setUsers(newUsers)
             toast('ลบพนักงานแล้ว')
         }
+    }
+
+    const handleBranchSave = () => {
+        if (!branchForm.name) { toast('กรุณากรอกชื่อสาขา', 'error'); return }
+        const newBranches = [...branches, { ...branchForm, id: `br_${generateId()}`, createdAt: new Date().toISOString() }]
+        saveBranches(newBranches)
+        setBranches(newBranches)
+        setShowBranchModal(false)
+        setBranchForm({ name: '', address: '', phone: '' })
+        toast('เพิ่มสาขาเรียบร้อย 🏢')
     }
 
     return (
@@ -97,7 +115,37 @@ export default function Settings() {
                             </div>
                         )}
                     </div>
+                    <div className="form-group" style={{ marginTop: 'var(--space-md)' }}>
+                        <label>Telegram Bot Token</label>
+                        <input className="form-control" type="text" value={settings.telegramBotToken || ''} onChange={e => setSettings({ ...settings, telegramBotToken: e.target.value })} placeholder="เช่น 123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11" />
+                    </div>
+                    <div className="form-group" style={{ marginTop: 'var(--space-sm)' }}>
+                        <label>Telegram Chat ID</label>
+                        <input className="form-control" type="text" value={settings.telegramChatId || ''} onChange={e => setSettings({ ...settings, telegramChatId: e.target.value })} placeholder="เช่น 123456789 หรือ -100123456789 (สำหรับกลุ่ม)" />
+                        <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)', marginTop: '4px' }}>รับแจ้งเตือนเมื่อเปิด/ปิดกะ หรือสต็อกเหลือน้อย ผ่านบอท Telegram</div>
+                    </div>
                     <button className="btn btn-primary" onClick={handleSave} style={{ marginTop: 'var(--space-xl)', width: '100%', justifyContent: 'center' }}>✅ บันทึกข้อมูลร้าน</button>
+                </div>
+
+                {/* Branches Management */}
+                <div className="card">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
+                        <h3 style={{ color: 'var(--text-primary)' }}>🏢 สาขาทั้งหมด</h3>
+                        <button className="btn btn-primary btn-sm" onClick={() => setShowBranchModal(true)}>+ เพิ่มสาขาใหม่</button>
+                    </div>
+                    <div className="low-stock-list">
+                        {branches.map(b => (
+                            <div key={b.id} className="low-stock-item">
+                                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                                    <div className="user-avatar" style={{ width: '28px', height: '28px', fontSize: '12px', background: 'var(--accent-primary-hover)' }}>🏢</div>
+                                    <div>
+                                        <div style={{ fontSize: 'var(--font-size-sm)', fontWeight: 700, color: 'var(--text-primary)' }}>{b.name} {b.id === 'default' && '(สาขาหลัก)'}</div>
+                                        <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>พนักงาน {users.filter(u => u.branchId === b.id || (b.id === 'default' && !u.branchId) || u.branchId === 'all').length} คน</div>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
                 </div>
 
                 {/* Staff Management */}
@@ -114,11 +162,17 @@ export default function Settings() {
                                     <div className="user-avatar" style={{ width: '28px', height: '28px', fontSize: '10px' }}>{u.name.charAt(0)}</div>
                                     <div>
                                         <div style={{ fontSize: 'var(--font-size-sm)', fontWeight: 700, color: 'var(--text-primary)' }}>{u.name}</div>
-                                        <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{u.role === 'admin' ? 'Admin' : 'Cashier'} • PIN: {u.pin}</div>
+                                        <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                                            {u.role === 'admin' ? 'Admin' : 'Cashier'}
+                                            • PIN: {u.pin}
+                                            <span style={{ marginLeft: '4px', background: 'var(--bg-card)', padding: '2px 4px', borderRadius: '4px' }}>
+                                                {u.branchId === 'all' ? 'ทุกสาขา' : branches.find(b => b.id === (u.branchId || 'default'))?.name || 'สาขาหลัก'}
+                                            </span>
+                                        </div>
                                     </div>
                                 </div>
                                 <div className="table-actions">
-                                    <button className="btn btn-ghost btn-sm" onClick={() => { setEditingUser(u); setUserForm({ name: u.name, pin: u.pin, role: u.role }); setShowUserModal(true) }}>✏️</button>
+                                    <button className="btn btn-ghost btn-sm" onClick={() => { setEditingUser(u); setUserForm({ name: u.name, pin: u.pin, role: u.role, branchId: u.branchId || 'default' }); setShowUserModal(true) }}>✏️</button>
                                     <button className="btn btn-ghost btn-sm" onClick={() => deleteUser(u.id)} style={{ color: 'var(--danger)' }}>🗑️</button>
                                 </div>
                             </div>
@@ -148,10 +202,45 @@ export default function Settings() {
                                     <option value="admin">เจ้าของร้าน (Admin)</option>
                                 </select>
                             </div>
+                            <div className="form-group" style={{ marginTop: 'var(--space-md)' }}>
+                                <label>สาขาที่รับผิดชอบ</label>
+                                <select className="form-control" value={userForm.branchId} onChange={e => setUserForm({ ...userForm, branchId: e.target.value })}>
+                                    {userForm.role === 'admin' && <option value="all">ดูแลทุกสาขา (Global)</option>}
+                                    {branches.map(b => (
+                                        <option key={b.id} value={b.id}>{b.name}</option>
+                                    ))}
+                                </select>
+                            </div>
                         </div>
                         <div className="modal-footer">
                             <button className="btn btn-secondary" onClick={() => setShowUserModal(false)}>ยกเลิก</button>
                             <button className="btn btn-primary" onClick={handleUserSave}>บันทึกข้อมูล</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Branch Modal */}
+            {showBranchModal && (
+                <div className="modal-overlay" onClick={() => setShowBranchModal(false)}>
+                    <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '400px' }}>
+                        <div className="modal-header"><h3>เพิ่มสาขาใหม่</h3></div>
+                        <div className="modal-body">
+                            <div className="form-group">
+                                <label>ชื่อสาขา</label>
+                                <input className="form-control" value={branchForm.name} onChange={e => setBranchForm({ ...branchForm, name: e.target.value })} placeholder="เช่น สาขาลาดพร้าว 71" autoFocus />
+                            </div>
+                            <div className="form-group" style={{ marginTop: '10px' }}>
+                                <label>เบอร์โทรสาขา</label>
+                                <input className="form-control" value={branchForm.phone} onChange={e => setBranchForm({ ...branchForm, phone: e.target.value })} placeholder="02-xxx-xxxx" />
+                            </div>
+                            <div style={{ fontSize: '10px', color: 'var(--warning)', marginTop: 'var(--space-md)' }}>
+                                ⚠️ <b>หมายเหตุ:</b> สินค้า โควต้าต่างๆ จะถูกแยกขาดจากกันในแต่ละสาขาทันทีที่คุณสลับไปใช้สาขานี้
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={() => setShowBranchModal(false)}>ยกเลิก</button>
+                            <button className="btn btn-primary" onClick={handleBranchSave}>บันทึกสาขา</button>
                         </div>
                     </div>
                 </div>

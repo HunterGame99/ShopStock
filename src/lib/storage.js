@@ -9,6 +9,7 @@ import {
     pushCredits, pushUsers, pushSettings,
     syncAllFromSupabase, hasCloudData, uploadAllToSupabase
 } from './supabaseStorage.js'
+import { sendTelegramNotify } from './telegramNotify.js'
 
 const PRODUCTS_KEY = 'shopstock_products';
 const TRANSACTIONS_KEY = 'shopstock_transactions';
@@ -22,6 +23,8 @@ const EXPENSES_KEY = 'shopstock_expenses';
 const SETTINGS_KEY = 'shopstock_settings';
 const USERS_KEY = 'shopstock_users';
 const SESSION_KEY = 'shopstock_session';
+const BRANCHES_KEY = 'shopstock_branches';
+const ACTIVE_BRANCH_KEY = 'shopstock_active_branch';
 
 // ===== Supabase push mapping =====
 const pushMap = {
@@ -42,13 +45,53 @@ export function generateId() {
     return Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
 }
 
-// ===== Generic CRUD helpers =====
-function getStore(key) { try { return JSON.parse(localStorage.getItem(key)) || [] } catch { return [] } }
+// ===== Branch Management =====
+export function getBranches() {
+    try {
+        const branches = JSON.parse(localStorage.getItem(BRANCHES_KEY)) || []
+        if (branches.length === 0) {
+            const def = { id: 'default', name: 'สาขาหลัก', address: '', phone: '', createdAt: new Date().toISOString() }
+            localStorage.setItem(BRANCHES_KEY, JSON.stringify([def]))
+            return [def]
+        }
+        return branches
+    } catch { return [{ id: 'default', name: 'สาขาหลัก' }] }
+}
+export function saveBranches(branches) { localStorage.setItem(BRANCHES_KEY, JSON.stringify(branches)) }
+export function getActiveBranchId() { return localStorage.getItem(ACTIVE_BRANCH_KEY) || 'default' }
+export function setActiveBranchId(id) { localStorage.setItem(ACTIVE_BRANCH_KEY, id) }
+
+// ===== Generic CRUD helpers (Branch Aware) =====
+function getStore(key) {
+    let allData = [];
+    try { allData = JSON.parse(localStorage.getItem(key)) || [] } catch { return [] }
+    
+    // Global tables or non-arrays
+    if ([USERS_KEY, SETTINGS_KEY, BRANCHES_KEY].includes(key) || !Array.isArray(allData)) return allData
+
+    const branchId = getActiveBranchId()
+    return allData.filter(item => !item.branchId || item.branchId === branchId)
+}
+
 function setStore(key, data) {
-    localStorage.setItem(key, JSON.stringify(data))
-    // Async push to Supabase (fire-and-forget)
+    let allData = [];
+    try { allData = JSON.parse(localStorage.getItem(key)) || [] } catch { }
+    
+    // Global tables or non-arrays
+    if ([USERS_KEY, SETTINGS_KEY, BRANCHES_KEY].includes(key) || !Array.isArray(data)) {
+        allData = data
+    } else {
+        const branchId = getActiveBranchId()
+        const mappedData = data.map(item => ({...item, branchId: item.branchId || branchId}))
+        // Filter out the other branches to keep them safe
+        const otherBranches = (Array.isArray(allData) ? allData : []).filter(item => item.branchId && item.branchId !== branchId && item.branchId !== 'default')
+        allData = [...otherBranches, ...mappedData]
+    }
+    
+    localStorage.setItem(key, JSON.stringify(allData))
+    // Async push to Supabase (fire-and-forget) - sends the full unified array to Supabase
     const pushFn = pushMap[key]
-    if (pushFn) pushFn(data).catch(err => console.warn('[Supabase] push error:', err.message))
+    if (pushFn) pushFn(allData).catch(err => console.warn('[Supabase] push error:', err.message))
 }
 
 // ===== Startup Sync =====
@@ -167,7 +210,15 @@ export function addTransaction(tx) {
         const product = products.find(p => p.id === item.productId)
         if (product) {
             if (newTx.type === 'in') product.stock = (product.stock || 0) + item.qty
-            else if (newTx.type === 'out') product.stock = Math.max(0, (product.stock || 0) - item.qty)
+            else if (newTx.type === 'out') {
+                product.stock = Math.max(0, (product.stock || 0) - item.qty)
+                // Telegram Notify for Low/Out of Stock
+                if (product.stock <= 0) {
+                    sendTelegramNotify(`🚨 [สินค้าหมด]\n"${product.name}" หมดสต็อกแล้ว! กรุณาตรวจสอบและสั่งซื้อเพิ่ม`)
+                } else if (product.stock <= product.minStock) {
+                    sendTelegramNotify(`⚠️ [แจ้งเตือนสต็อกเหลือน้อย]\n"${product.name}" เหลือสต็อกแค่ ${product.stock} ชิ้น (จุดสั่งซื้อ: ${product.minStock})`)
+                }
+            }
             else if (newTx.type === 'refund') product.stock = (product.stock || 0) + item.qty
         }
     })
@@ -372,14 +423,31 @@ export function getTodayTarget() {
     return getTargets().find(t => t.date === new Date().toDateString())?.amount || 0
 }
 
-// ===== Settings =====
+// ===== Settings (Branch Aware) =====
 export function getSettings() {
-    try { return JSON.parse(localStorage.getItem(SETTINGS_KEY)) || { theme: 'dark', shopName: 'ShopStock' } }
-    catch { return { theme: 'dark', shopName: 'ShopStock' } }
+    const raw = getStore(SETTINGS_KEY)
+    const branchId = getActiveBranchId()
+    const fallback = { id: branchId, theme: 'dark', shopName: 'ShopStock', vatRate: 7 }
+    
+    if (Array.isArray(raw)) {
+        return raw.find(s => s.id === branchId) || fallback
+    } else {
+        // Legacy: raw was an object
+        if (branchId === 'default') return raw || fallback
+        return fallback
+    }
 }
+
 export function saveSettings(s) {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(s))
-    pushSettings(s).catch(err => console.warn('[Supabase] push settings error:', err.message))
+    let raw = getStore(SETTINGS_KEY)
+    const branchId = getActiveBranchId()
+    let newSettings;
+    if (Array.isArray(raw)) {
+        newSettings = [...raw.filter(x => x.id !== branchId), { ...s, id: branchId }]
+    } else {
+        newSettings = [{ ...(raw || {}), id: 'default' }, { ...s, id: branchId }]
+    }
+    setStore(SETTINGS_KEY, newSettings)
 }
 
 // ===== Formatting =====
@@ -629,8 +697,8 @@ export function getUsers() {
     const users = getStore(USERS_KEY)
     if (users.length === 0) {
         // Create default admin if none exists
-        const admin = { id: 'admin', name: 'เจ้าของร้าน', pin: '1234', role: 'admin', createdAt: new Date().toISOString() }
-        const staff = { id: 'staff', name: 'พนักงาน', pin: '5678', role: 'staff', createdAt: new Date().toISOString() }
+        const admin = { id: 'admin', name: 'เจ้าของร้าน', pin: '1234', role: 'admin', branchId: 'all', createdAt: new Date().toISOString() }
+        const staff = { id: 'staff', name: 'พนักงาน', pin: '5678', role: 'staff', branchId: 'default', createdAt: new Date().toISOString() }
         saveUsers([admin, staff])
         return [admin, staff]
     }
@@ -642,7 +710,18 @@ export function authenticate(pin) {
     const users = getUsers()
     const user = users.find(u => u.pin === pin)
     if (user) {
-        const session = { userId: user.id, userName: user.name, role: user.role, loginAt: new Date().toISOString() }
+        // Staff are locked to their branch; Admin can be anything but usually 'all' or 'default'
+        if (user.role === 'staff' && user.branchId && user.branchId !== 'all') {
+            setActiveBranchId(user.branchId) // Force switch to staff's branch
+        }
+        
+        const session = { 
+            userId: user.id, 
+            userName: user.name, 
+            role: user.role, 
+            assignedBranch: user.branchId || 'default', 
+            loginAt: new Date().toISOString() 
+        }
         localStorage.setItem(SESSION_KEY, JSON.stringify(session))
         return session
     }
@@ -720,6 +799,29 @@ export function closeShift(closingCash, notes) {
     shifts[idx].difference = shifts[idx].closingCash - shifts[idx].expectedCash
 
     saveShifts(shifts)
+
+    // Notify summary
+    const s = shifts[idx]
+    const openedTime = new Date(s.openedAt).toLocaleTimeString('th-TH')
+    const closedTime = new Date(s.closedAt).toLocaleTimeString('th-TH')
+    const diffSign = s.difference > 0 ? '+' : ''
+    const msg = `📢 [แจ้งเตือน ปิดกะทำงาน]
+👤 พนักงาน: ${s.staffName}
+⏰ เวลาเปิดกะ: ${openedTime}
+⏰ เวลาปิดกะ: ${closedTime}
+
+💰 ยอดขายรวม: ฿${s.totalSales.toLocaleString()}
+💵 เงินสดหน้าตู้: ฿${s.cashSales.toLocaleString()}
+📱 โอนเงิน: ฿${s.transferSales.toLocaleString()}
+💳 เครดิต/QR: ฿${(s.qrSales + s.totalSales - s.cashSales - s.transferSales).toLocaleString()}
+
+📥 รวมเงินในตู้ตามระบบ: ฿${s.expectedCash.toLocaleString()}
+🖐️ เงินสดหน้าลิ้นชักที่นับได้: ฿${s.closingCash.toLocaleString()}
+⚖️ ส่วนต่าง: ${diffSign}${s.difference.toLocaleString()} บาท
+
+📝 หมายเหตุ: ${s.notes || '-'}`
+    sendTelegramNotify(msg)
+
     return shifts[idx]
 }
 
