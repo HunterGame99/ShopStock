@@ -97,6 +97,17 @@ function LoginOverlay({ onLogin }) {
     )
 }
 
+function NotFound() {
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '60vh', textAlign: 'center', padding: 'var(--space-xl)' }}>
+            <div style={{ fontSize: '5rem', marginBottom: 'var(--space-md)', opacity: 0.6 }}>🔍</div>
+            <h2 style={{ fontSize: 'var(--font-size-2xl)', color: 'var(--text-primary)', fontWeight: 800, marginBottom: 'var(--space-sm)' }}>404 — ไม่พบหน้านี้</h2>
+            <p style={{ color: 'var(--text-muted)', marginBottom: 'var(--space-lg)' }}>ลิงก์ที่คุณเข้ามาอาจไม่ถูกต้อง หรือหน้านี้ถูกลบออกแล้ว</p>
+            <a href="/" style={{ background: 'var(--accent-gradient)', color: 'white', padding: '12px 24px', borderRadius: 'var(--radius-md)', textDecoration: 'none', fontWeight: 600 }}>🏠 กลับหน้าแรก</a>
+        </div>
+    )
+}
+
 function App() {
     const [user, setUser] = useState(null)
     const [activeShift, setActiveShift] = useState(null)
@@ -154,6 +165,7 @@ function App() {
                                     <Route path="/history" element={<History />} />
                                     <Route path="/reports" element={<Reports />} />
                                     <Route path="/settings" element={<Settings />} />
+                                    <Route path="*" element={<NotFound />} />
                                 </Routes>
                             </Layout>
                         )}

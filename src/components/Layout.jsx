@@ -100,6 +100,9 @@ export default function Layout({ children }) {
                     <button className="theme-toggle" onClick={toggleTheme} title="สลับธีม">
                         {theme === 'dark' ? '☀️ Light Mode' : '🌙 Dark Mode'}
                     </button>
+                    <button className="logout-btn" onClick={logout}>
+                        🚪 ออกจากระบบ
+                    </button>
                 </div>
             </aside>
 
