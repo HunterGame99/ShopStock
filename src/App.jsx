@@ -92,7 +92,9 @@ function LoginOverlay({ onLogin }) {
                         </button>
                     ))}
                 </div>
-                <div style={{ marginTop: 'var(--space-xl)', fontSize: '10px', color: 'var(--text-muted)' }}>Admin PIN: 1234</div>
+                <div style={{ marginTop: 'var(--space-xl)', fontSize: '10px', color: 'var(--text-muted)' }}>
+                    Admin PIN: 1234 | Staff PIN: 5678
+                </div>
             </div>
         </div>
     )

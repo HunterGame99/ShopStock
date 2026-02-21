@@ -630,8 +630,9 @@ export function getUsers() {
     if (users.length === 0) {
         // Create default admin if none exists
         const admin = { id: 'admin', name: 'เจ้าของร้าน', pin: '1234', role: 'admin', createdAt: new Date().toISOString() }
-        saveUsers([admin])
-        return [admin]
+        const staff = { id: 'staff', name: 'พนักงาน', pin: '5678', role: 'staff', createdAt: new Date().toISOString() }
+        saveUsers([admin, staff])
+        return [admin, staff]
     }
     return users
 }

@@ -1571,3 +1571,33 @@ tbody tr:last-child td {
     grid-template-columns: repeat(3, 1fr);
   }
 }
+/* Collapsed Sidebar Styles */
+.sidebar.collapsed {
+  width: 80px;
+}
+.sidebar.collapsed .sidebar-brand {
+  justify-content: center;
+  padding: var(--space-md) var(--space-sm);
+}
+.sidebar.collapsed .sidebar-user-section {
+  padding: var(--space-md) var(--space-sm);
+  align-items: center;
+}
+.sidebar.collapsed .user-profile {
+  justify-content: center;
+}
+.sidebar.collapsed .nav-link {
+  justify-content: center;
+  padding: 10px;
+}
+.sidebar.collapsed .nav-icon {
+  margin: 0;
+  font-size: 1.4rem;
+}
+.app-layout.collapsed .main-content {
+  margin-left: 80px;
+}
+.sidebar.collapsed .notification-dot {
+  right: 2px;
+  top: 2px;
+}
