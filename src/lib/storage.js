@@ -663,7 +663,22 @@ export function saveShifts(shifts) { setStore(SHIFTS_KEY, shifts) }
 
 export function getActiveShift() {
     const shifts = getShifts()
-    return shifts.find(s => !s.closedAt) || null
+    const active = shifts.find(s => !s.closedAt)
+    if (!active) return null
+
+    // Auto-close shift if it's from a previous day
+    const openedDate = new Date(active.openedAt).toDateString()
+    const today = new Date().toDateString()
+    if (openedDate !== today) {
+        active.closedAt = new Date().toISOString()
+        active.closingCash = active.expectedCash
+        active.notes = 'ระบบปิดกะอัตโนมัติข้ามวัน (Auto-closed)'
+        active.difference = 0
+        saveShifts(shifts)
+        return null
+    }
+
+    return active
 }
 
 export function openShift(openingCash) {
