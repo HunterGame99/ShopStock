@@ -79,7 +79,7 @@ export default function StockOut() {
                 if (existing.qty >= product.stock) { toast('สต็อกไม่เพียงพอ', 'error'); return prev }
                 return prev.map(c => c.productId === product.id ? { ...c, qty: c.qty + 1 } : c)
             }
-            return [...prev, { productId: product.id, productName: product.name, qty: 1, price: product.sellPrice, maxStock: product.stock, emoji: product.emoji }]
+            return [...prev, { productId: product.id, productName: product.name, qty: 1, price: product.sellPrice, maxStock: product.stock, emoji: product.emoji, imageUrl: product.imageUrl }]
         })
         playSound('scan')
     }, [toast, activeShift])
@@ -258,7 +258,11 @@ export default function StockOut() {
                     <div className="product-grid">
                         {filteredProducts.map(p => (
                             <div key={p.id} className={`product-card ${p.stock <= 0 ? 'out-of-stock' : ''}`} onClick={() => addToCart(p)}>
-                                <div className="product-emoji">{p.emoji || getCategoryEmoji(p.category)}</div>
+                                {p.imageUrl ? (
+                                    <div className="product-image" style={{ width: '100%', height: '80px', marginBottom: '8px', backgroundImage: `url(${p.imageUrl})`, backgroundSize: 'cover', backgroundPosition: 'center', borderRadius: 'var(--radius-sm)' }} />
+                                ) : (
+                                    <div className="product-emoji">{p.emoji || getCategoryEmoji(p.category)}</div>
+                                )}
                                 <div className="product-name">{p.name}</div>
                                 <div className="product-price">{formatCurrency(p.sellPrice)}</div>
                                 <div className="product-stock-info">{p.stock <= 0 ? <span style={{ color: 'var(--danger)', fontWeight: 700, fontSize: '0.65rem' }}>หมด</span> : `เหลือ ${p.stock}`}</div>
@@ -309,7 +313,11 @@ export default function StockOut() {
                             </div>
                         ) : cart.map(item => (
                             <div key={item.productId} className="cart-item">
-                                <span style={{ fontSize: '1.1rem' }}>{item.emoji || '📦'}</span>
+                                {item.imageUrl ? (
+                                    <img src={item.imageUrl} alt={item.productName} style={{ width: '32px', height: '32px', objectFit: 'cover', borderRadius: '4px' }} />
+                                ) : (
+                                    <span style={{ fontSize: '1.1rem' }}>{item.emoji || '📦'}</span>
+                                )}
                                 <div className="cart-item-info">
                                     <div className="cart-item-name">{item.productName}</div>
                                     <div className="cart-item-price">{formatCurrency(item.price)} × {item.qty}</div>

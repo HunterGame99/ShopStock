@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
 import { getProducts, addProduct, updateProduct, deleteProduct, formatCurrency, CATEGORIES, getCategoryEmoji } from '../lib/storage.js'
+import { uploadProductImage } from '../lib/supabaseStorage.js'
 import { useToast, useAuth } from '../App.jsx'
 import { canEditProducts, canSeeProfit } from '../lib/permissions.js'
 
-const emptyForm = { name: '', sku: '', barcode: '', category: '', emoji: '📦', costPrice: '', sellPrice: '', stock: '', minStock: '5' }
+const emptyForm = { name: '', sku: '', barcode: '', category: '', emoji: '📦', imageUrl: '', costPrice: '', sellPrice: '', stock: '', minStock: '5' }
 
 export default function Products() {
     const [products, setProducts] = useState([])
@@ -13,6 +14,8 @@ export default function Products() {
     const [showModal, setShowModal] = useState(false)
     const [editId, setEditId] = useState(null)
     const [form, setForm] = useState(emptyForm)
+    const [imageFile, setImageFile] = useState(null)
+    const [isUploading, setIsUploading] = useState(false)
     const [deleteConfirm, setDeleteConfirm] = useState(null)
     const toast = useToast()
     const { user } = useAuth()
@@ -39,25 +42,39 @@ export default function Products() {
             }
         })
 
-    const openAdd = () => { setEditId(null); setForm(emptyForm); setShowModal(true) }
+    const openAdd = () => { setEditId(null); setForm(emptyForm); setImageFile(null); setShowModal(true) }
 
     const openEdit = (product) => {
         setEditId(product.id)
         setForm({
             name: product.name, sku: product.sku, barcode: product.barcode || '',
-            category: product.category, emoji: product.emoji || '📦',
+            category: product.category, emoji: product.emoji || '📦', imageUrl: product.imageUrl || '',
             costPrice: product.costPrice.toString(), sellPrice: product.sellPrice.toString(),
             stock: product.stock.toString(), minStock: product.minStock.toString(),
         })
+        setImageFile(null)
         setShowModal(true)
     }
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault()
         if (!form.name || !form.sellPrice) { toast('กรุณากรอกชื่อสินค้าและราคาขาย', 'error'); return }
 
+        setIsUploading(true)
+        let finalImageUrl = form.imageUrl
+        if (imageFile) {
+            const uploadedUrl = await uploadProductImage(imageFile)
+            if (uploadedUrl) {
+                finalImageUrl = uploadedUrl
+            } else {
+                toast('อัปโหลดรูปภาพไม่สำเร็จ กรุณาลองใหม่', 'error')
+            }
+        }
+        setIsUploading(false)
+
         const data = {
             ...form,
+            imageUrl: finalImageUrl,
             costPrice: Number(form.costPrice), sellPrice: Number(form.sellPrice),
             stock: Number(form.stock), minStock: Number(form.minStock),
         }
@@ -169,7 +186,13 @@ export default function Products() {
                                 const margin = profitMargin(p.costPrice, p.sellPrice)
                                 return (
                                     <tr key={p.id}>
-                                        <td style={{ fontSize: '1.5rem', textAlign: 'center', width: '50px' }}>{p.emoji || getCategoryEmoji(p.category)}</td>
+                                        <td style={{ fontSize: '1.5rem', textAlign: 'center', width: '50px' }}>
+                                            {p.imageUrl ? (
+                                                <img src={p.imageUrl} alt={p.name} style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '4px' }} />
+                                            ) : (
+                                                p.emoji || getCategoryEmoji(p.category)
+                                            )}
+                                        </td>
                                         <td style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{p.name}</td>
                                         <td>
                                             <code style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)' }}>{p.sku}</code>
@@ -225,20 +248,42 @@ export default function Products() {
                         </div>
                         <form onSubmit={handleSubmit}>
                             <div className="modal-body">
-                                {/* Emoji Picker */}
+                                {/* Emoji Picker / Image Upload */}
                                 <div className="form-group">
-                                    <label>ไอคอนสินค้า</label>
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                                        {emojis.map(e => (
-                                            <button key={e} type="button"
-                                                style={{
-                                                    width: '36px', height: '36px', fontSize: '1.2rem', border: form.emoji === e ? '2px solid var(--accent-primary)' : '1px solid var(--border)',
-                                                    borderRadius: 'var(--radius-sm)', background: form.emoji === e ? 'rgba(99,102,241,0.15)' : 'var(--bg-input)', cursor: 'pointer'
-                                                }}
-                                                onClick={() => setForm({ ...form, emoji: e })}
-                                            >{e}</button>
-                                        ))}
+                                    <label>รูปภาพสินค้า / ไอคอน</label>
+                                    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 'var(--space-md)', marginBottom: 'var(--space-sm)' }}>
+                                        {form.imageUrl || imageFile ? (
+                                            <img src={imageFile ? URL.createObjectURL(imageFile) : form.imageUrl} alt="Preview" style={{ width: '64px', height: '64px', objectFit: 'cover', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }} />
+                                        ) : (
+                                            <div style={{ width: '64px', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2rem', background: 'var(--bg-input)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
+                                                {form.emoji}
+                                            </div>
+                                        )}
+                                        <input type="file" accept="image/*" onChange={e => {
+                                            if (e.target.files[0]) {
+                                                setImageFile(e.target.files[0])
+                                                setForm({ ...form, emoji: '' })
+                                            }
+                                        }} style={{ fontSize: '14px' }} />
+                                        {(form.imageUrl || imageFile) && (
+                                            <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setForm({ ...form, imageUrl: '', emoji: '📦' }); setImageFile(null) }}>
+                                                ลบรูป
+                                            </button>
+                                        )}
                                     </div>
+                                    {!imageFile && !form.imageUrl && (
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '8px' }}>
+                                            {emojis.map(e => (
+                                                <button key={e} type="button"
+                                                    style={{
+                                                        width: '36px', height: '36px', fontSize: '1.2rem', border: form.emoji === e ? '2px solid var(--accent-primary)' : '1px solid var(--border)',
+                                                        borderRadius: 'var(--radius-sm)', background: form.emoji === e ? 'rgba(99,102,241,0.15)' : 'var(--bg-input)', cursor: 'pointer'
+                                                    }}
+                                                    onClick={() => { setForm({ ...form, emoji: e, imageUrl: '' }); setImageFile(null) }}
+                                                >{e}</button>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
                                 <div className="form-group">
                                     <label>ชื่อสินค้า *</label>
@@ -291,8 +336,10 @@ export default function Products() {
                                 </div>
                             </div>
                             <div className="modal-footer">
-                                <button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)}>ยกเลิก</button>
-                                <button type="submit" className="btn btn-primary">{editId ? '💾 บันทึก' : '➕ เพิ่มสินค้า'}</button>
+                                <button type="button" className="btn btn-secondary" disabled={isUploading} onClick={() => setShowModal(false)}>ยกเลิก</button>
+                                <button type="submit" className="btn btn-primary" disabled={isUploading}>
+                                    {isUploading ? '⏳ กำลังอัปโหลด...' : editId ? '💾 บันทึก' : '➕ เพิ่มสินค้า'}
+                                </button>
                             </div>
                         </form>
                     </div>

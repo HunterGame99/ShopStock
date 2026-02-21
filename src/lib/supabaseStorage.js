@@ -20,7 +20,7 @@ const toSnake = (obj) => {
         closingCash: 'closing_cash', productId: 'product_id', minQty: 'min_qty',
         shopName: 'shop_name', shopAddress: 'shop_address', shopPhone: 'shop_phone',
         receiptFooter: 'receipt_footer', vatEnabled: 'vat_enabled', vatRate: 'vat_rate',
-        paidAt: 'paid_at',
+        paidAt: 'paid_at', imageUrl: 'image_url'
     }
     const result = {}
     for (const [key, val] of Object.entries(obj)) {
@@ -43,7 +43,7 @@ const toCamel = (obj) => {
         closing_cash: 'closingCash', product_id: 'productId', min_qty: 'minQty',
         shop_name: 'shopName', shop_address: 'shopAddress', shop_phone: 'shopPhone',
         receipt_footer: 'receiptFooter', vat_enabled: 'vatEnabled', vat_rate: 'vatRate',
-        paid_at: 'paidAt',
+        paid_at: 'paidAt', image_url: 'imageUrl'
     }
     const result = {}
     for (const [key, val] of Object.entries(obj)) {
@@ -183,4 +183,31 @@ export async function uploadAllToSupabase() {
     } catch { }
 
     console.log('[Supabase] Upload complete!')
+}
+
+// ===== Storage Specific =====
+export async function uploadProductImage(file) {
+    if (!file) return null
+    try {
+        const fileExt = file.name.split('.').pop()
+        const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`
+        
+        const { error: uploadError } = await supabase.storage
+            .from('product-images')
+            .upload(fileName, file)
+
+        if (uploadError) {
+            console.error('[Supabase Storage] Upload Error:', uploadError.message)
+            return null
+        }
+
+        const { data } = supabase.storage
+            .from('product-images')
+            .getPublicUrl(fileName)
+        
+        return data.publicUrl
+    } catch (err) {
+        console.error('[Supabase Storage] Unexpected Error:', err)
+        return null
+    }
 }
