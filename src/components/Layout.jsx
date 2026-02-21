@@ -57,6 +57,10 @@ export default function Layout({ children }) {
         items: g.items.filter(item => canAccessPage(role, item.path))
     })).filter(g => g.items.length > 0)
 
+    // Sync Status
+    const [syncStatus, setSyncStatus] = useState(navigator.onLine ? 'online' : 'offline')
+    const hasUnsyncedData = () => localStorage.getItem('shopstock_needs_sync') === 'true'
+
     const refreshStats = () => {
         setAlerts(getNotifications())
         setTodayRevenue(getTodayRevenue())
@@ -70,6 +74,27 @@ export default function Layout({ children }) {
         const allBranches = getBranches()
         setBranches(allBranches)
         setActiveBranch(allBranches.find(b => b.id === getActiveBranchId()) || allBranches[0])
+
+        // Setup network listeners
+        const handleOnline = () => {
+            setSyncStatus('syncing')
+            // The storage.js listener handles the actual upload and fires 'shopstock:sync-complete'
+        }
+        const handleOffline = () => setSyncStatus('offline')
+        const handleSyncComplete = () => setSyncStatus('online')
+
+        window.addEventListener('online', handleOnline)
+        window.addEventListener('offline', handleOffline)
+        window.addEventListener('shopstock:sync-complete', handleSyncComplete)
+
+        // Initial flag check
+        if (navigator.onLine && hasUnsyncedData()) setSyncStatus('syncing')
+
+        return () => {
+            window.removeEventListener('online', handleOnline)
+            window.removeEventListener('offline', handleOffline)
+            window.removeEventListener('shopstock:sync-complete', handleSyncComplete)
+        }
     }, [location])
 
     // Live counter — refresh every 15s
@@ -111,8 +136,13 @@ export default function Layout({ children }) {
                         )}
                     </div>
                     {!isCollapsed && (
-                        <div className={`shift-status ${activeShift ? 'open' : 'closed'}`}>
-                            {activeShift ? '🟢 กำลังเปิดกะ' : '🔴 ยังไม่เริ่มกะ'}
+                        <div style={{ display: 'flex', gap: '4px', marginTop: '8px' }}>
+                            <div className={`shift-status ${activeShift ? 'open' : 'closed'}`} style={{ flex: 1, textAlign: 'center' }}>
+                                {activeShift ? '🟢 กำลังเปิดกะ' : '🔴 ยังไม่เริ่มกะ'}
+                            </div>
+                            <div className="shift-status" style={{ flex: 1, textAlign: 'center', background: syncStatus === 'offline' ? 'var(--danger-bg)' : syncStatus === 'syncing' ? 'var(--warning-bg)' : 'var(--success-bg)', color: syncStatus === 'offline' ? 'var(--danger)' : syncStatus === 'syncing' ? 'var(--warning)' : 'var(--success)', border: 'none' }} title={syncStatus === 'offline' ? 'ออฟไลน์ (เซฟลงเครื่องแล้ว)' : syncStatus === 'syncing' ? 'กำลังซิงค์ขึ้น Cloud' : 'เชื่อมต่อปกติ'}>
+                                {syncStatus === 'offline' ? '❌ ออฟไลน์' : syncStatus === 'syncing' ? '⏳ กำลังซิงค์' : '✅ ออนไลน์'}
+                            </div>
                         </div>
                     )}
                 </div>

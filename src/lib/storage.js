@@ -11,6 +11,8 @@ import {
 } from './supabaseStorage.js'
 import { sendTelegramNotify } from './telegramNotify.js'
 
+export const NEEDS_SYNC_KEY = 'shopstock_needs_sync';
+
 const PRODUCTS_KEY = 'shopstock_products';
 const TRANSACTIONS_KEY = 'shopstock_transactions';
 const CUSTOMERS_KEY = 'shopstock_customers';
@@ -89,20 +91,43 @@ function setStore(key, data) {
     }
     
     localStorage.setItem(key, JSON.stringify(allData))
-    // Async push to Supabase (fire-and-forget) - sends the full unified array to Supabase
+    
+    // Mark as needing sync
+    localStorage.setItem(NEEDS_SYNC_KEY, 'true')
+
+    // Async push to Supabase (fire-and-forget)
+    // If offline, this will fail but the needs_sync flag is already set.
     const pushFn = pushMap[key]
-    if (pushFn) pushFn(allData).catch(err => console.warn('[Supabase] push error:', err.message))
+    if (pushFn) {
+        pushFn(allData).then(() => {
+            // Check if there are other pending syncs (simplistic approach: clear flag if success)
+            // A more robust approach would track per-table syncs, but this is a good start.
+            // We will clear it in uploadAllToSupabase for better reliability.
+        }).catch(err => {
+            console.warn('[Supabase] push error (offline?):', err.message)
+        })
+    }
 }
 
 // ===== Startup Sync =====
 export async function initSync() {
     try {
+        const needsSync = localStorage.getItem(NEEDS_SYNC_KEY) === 'true'
+        
+        // CRITICAL: If we have offline data that hasn't been synced, 
+        // DO NOT pull from Supabase first, otherwise we overwrite local data.
+        if (needsSync) {
+            console.log('[Sync] Offline data detected. Uploading to cloud first...')
+            await uploadAllToSupabase()
+            // uploadAllToSupabase will clear the boolean upon success
+        }
+
         const cloudHasData = await hasCloudData()
         if (cloudHasData) {
             // Cloud has data → pull to localStorage
             await syncAllFromSupabase()
-        } else {
-            // Cloud is empty → push local data up
+        } else if (!needsSync) {
+            // Cloud is empty AND we haven't just uploaded → push local data up
             const localProducts = getStore(PRODUCTS_KEY)
             if (localProducts.length > 0) {
                 await uploadAllToSupabase()
@@ -111,6 +136,24 @@ export async function initSync() {
     } catch (err) {
         console.warn('[Supabase] Sync failed, using local data:', err.message)
     }
+    
+    // Listen for connection restoration
+    window.addEventListener('online', async () => {
+        console.log('[Network] Back online! Checking for unsynced data...')
+        if (localStorage.getItem(NEEDS_SYNC_KEY) === 'true') {
+            try {
+                // Upload local first to prevent loss
+                await uploadAllToSupabase()
+                // Then pull fresh data
+                await syncAllFromSupabase()
+                console.log('[Network] Auto-sync complete!')
+                // Disptacth custom event to let UI know
+                window.dispatchEvent(new Event('shopstock:sync-complete'))
+            } catch (err) {
+                console.error('[Network] Auto-sync failed:', err)
+            }
+        }
+    })
 }
 
 // ===== Products CRUD =====

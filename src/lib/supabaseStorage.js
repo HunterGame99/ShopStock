@@ -173,24 +173,31 @@ export async function uploadAllToSupabase() {
     console.log('[Supabase] Uploading local data to cloud...')
     const parse = (key) => { try { return JSON.parse(localStorage.getItem(key)) || [] } catch { return [] } }
 
-    await pushProducts(parse('shopstock_products'))
-    await pushTransactions(parse('shopstock_transactions'))
-    await pushCustomers(parse('shopstock_customers'))
-    await pushShifts(parse('shopstock_shifts'))
-    await pushPromotions(parse('shopstock_promotions'))
-    await pushExpenses(parse('shopstock_expenses'))
-    await pushTargets(parse('shopstock_targets'))
-    await pushHeldBills(parse('shopstock_held_bills'))
-    await pushCredits(parse('shopstock_credits'))
-    await pushUsers(parse('shopstock_users'))
-
-    // Settings
     try {
-        const settings = JSON.parse(localStorage.getItem('shopstock_settings')) || {}
-        if (Object.keys(settings).length > 0) await pushSettings(settings)
-    } catch { }
+        await pushProducts(parse('shopstock_products'))
+        await pushTransactions(parse('shopstock_transactions'))
+        await pushCustomers(parse('shopstock_customers'))
+        await pushShifts(parse('shopstock_shifts'))
+        await pushPromotions(parse('shopstock_promotions'))
+        await pushExpenses(parse('shopstock_expenses'))
+        await pushTargets(parse('shopstock_targets'))
+        await pushHeldBills(parse('shopstock_held_bills'))
+        await pushCredits(parse('shopstock_credits'))
+        await pushUsers(parse('shopstock_users'))
 
-    console.log('[Supabase] Upload complete!')
+        // Settings
+        try {
+            const settings = JSON.parse(localStorage.getItem('shopstock_settings')) || {}
+            if (Object.keys(settings).length > 0) await pushSettings(settings)
+        } catch { }
+
+        // Clear the sync flag since we successfully pushed everything
+        localStorage.removeItem('shopstock_needs_sync')
+        console.log('[Supabase] Upload complete!')
+    } catch (err) {
+        console.error('[Supabase] Upload failed, will retry later:', err)
+        throw err // rethrow to keep needs_sync active
+    }
 }
 
 // ===== Storage Specific =====
