@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { getProducts, addTransaction, getCustomers, formatCurrency, formatDate, playSound, getTopProducts, getCategoryEmoji, applyPromotions, getPromotions, CATEGORIES, holdBill, getHeldBills, resumeBill, deleteHeldBill, getRecentSales, addCredit, getUnpaidCredits, getSettings } from '../lib/storage.js'
+import { getProducts, addTransaction, getCustomers, formatCurrency, formatDate, playSound, getTopProducts, getCategoryEmoji, applyPromotions, getPromotions, CATEGORIES, holdBill, getHeldBills, resumeBill, deleteHeldBill, getRecentSales, addCredit, getUnpaidCredits, getSettings, redeemPoints } from '../lib/storage.js'
 import { useToast, useShift } from '../App.jsx'
 import BarcodeScanner from '../components/BarcodeScanner.jsx'
 import { Link } from 'react-router-dom'
@@ -27,6 +27,7 @@ export default function StockOut() {
     const [showNumpad, setShowNumpad] = useState(false)
     const [numpadTarget, setNumpadTarget] = useState(null)
     const [numpadValue, setNumpadValue] = useState('')
+    const [pointsUsed, setPointsUsed] = useState(0)
     const [settings, setSettings] = useState({ shopName: 'ShopStock', shopAddress: '', shopPhone: '', receiptFooter: 'ขอบคุณที่ใช้บริการ ❤️', vatEnabled: false, vatRate: 7 })
     const toast = useToast()
 
@@ -81,7 +82,7 @@ export default function StockOut() {
             return [...prev, { productId: product.id, productName: product.name, qty: 1, price: product.sellPrice, maxStock: product.stock, emoji: product.emoji }]
         })
         playSound('scan')
-    }, [toast])
+    }, [toast, activeShift])
 
     const handleBarcodeScan = useCallback((code) => {
         const allProducts = getProducts()
@@ -103,7 +104,7 @@ export default function StockOut() {
 
     const subtotal = cart.reduce((s, c) => s + (c.qty * c.price), 0)
     const manualDiscount = discountType === 'percent' ? subtotal * (Number(discount) || 0) / 100 : (Number(discount) || 0)
-    const totalDiscount = manualDiscount + promoDiscount
+    const totalDiscount = manualDiscount + promoDiscount + pointsUsed
     const cartTotal = Math.max(0, subtotal - totalDiscount)
     const vatAmount = settings.vatEnabled ? (cartTotal * settings.vatRate / (100 + settings.vatRate)) : 0
     const netAmount = cartTotal - vatAmount
@@ -164,9 +165,13 @@ export default function StockOut() {
             change: paymentMethod === 'cash' ? payAmount - cartTotal : 0, paymentMethod,
             customerId: selectedCustomer || null, note: '',
         })
+        // Redeem points if used
+        if (pointsUsed > 0 && selectedCustomer) {
+            redeemPoints(selectedCustomer, pointsUsed)
+        }
         playSound('success')
         setShowReceipt({ ...tx, payment: payAmount, change: paymentMethod === 'cash' ? payAmount - cartTotal : 0 })
-        setShowCheckout(false); setCart([]); setDiscount(''); setPayment(''); setSelectedCustomer('')
+        setShowCheckout(false); setCart([]); setDiscount(''); setPayment(''); setSelectedCustomer(''); setPointsUsed(0)
         toast('ขายสำเร็จ! 🎉'); reload()
     }
 
@@ -277,8 +282,20 @@ export default function StockOut() {
                             {customers.map(c => <option key={c.id} value={c.id}>👤 {c.name} {c.phone ? `(${c.phone})` : ''}</option>)}
                         </select>
                         {selectedCustomerData && (
-                            <div className="loyalty-badge" style={{ marginTop: '4px' }}>
-                                🪙 คะแนนสะสม: {selectedCustomerData.points || 0}
+                            <div className="loyalty-badge" style={{ marginTop: '4px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <span>🪙 คะแนน: {selectedCustomerData.points || 0}</span>
+                                {(selectedCustomerData.points || 0) > 0 && cart.length > 0 && (
+                                    pointsUsed > 0 ? (
+                                        <button className="btn btn-ghost btn-sm" onClick={() => setPointsUsed(0)} style={{ fontSize: '10px', color: 'var(--danger)' }}>✕ ยกเลิกแลก ({pointsUsed})</button>
+                                    ) : (
+                                        <button className="btn btn-primary btn-sm" onClick={() => {
+                                            const maxPoints = Math.min(selectedCustomerData.points || 0, subtotal - manualDiscount - promoDiscount)
+                                            if (maxPoints <= 0) return
+                                            const input = window.prompt(`แลกกี่คะแนน? (สูงสุด ${maxPoints} คะแนน = ฿${maxPoints})`, maxPoints)
+                                            if (input && Number(input) > 0 && Number(input) <= maxPoints) setPointsUsed(Number(input))
+                                        }} style={{ fontSize: '10px' }}>🎁 แลกแต้ม</button>
+                                    )
+                                )}
                             </div>
                         )}
                     </div>
@@ -337,6 +354,7 @@ export default function StockOut() {
                                 <div className="cart-summary-row"><span>ราคาสินค้า</span><span>{formatCurrency(subtotal)}</span></div>
                                 {manualDiscount > 0 && <div className="cart-summary-row" style={{ color: 'var(--danger)' }}><span>ส่วนลด</span><span>-{formatCurrency(manualDiscount)}</span></div>}
                                 {promoDiscount > 0 && <div className="cart-summary-row" style={{ color: 'var(--danger)' }}><span>🏷️ โปรโมชั่น</span><span>-{formatCurrency(promoDiscount)}</span></div>}
+                                {pointsUsed > 0 && <div className="cart-summary-row" style={{ color: 'var(--danger)' }}><span>🎁 แลกแต้ม ({pointsUsed} คะแนน)</span><span>-{formatCurrency(pointsUsed)}</span></div>}
                                 <div className="cart-summary-row total"><span>ยอดรวม</span><span>{formatCurrency(cartTotal)}</span></div>
                             </div>
 
@@ -405,6 +423,7 @@ export default function StockOut() {
                                 <h4>🏪 {settings.shopName || 'ShopStock'}</h4>
                                 {settings.shopAddress && <div style={{ textAlign: 'center', fontSize: '10px', whiteSpace: 'pre-wrap' }}>{settings.shopAddress}</div>}
                                 {settings.shopPhone && <div style={{ textAlign: 'center', fontSize: '10px' }}>โทร: {settings.shopPhone}</div>}
+                                <div style={{ textAlign: 'center', fontSize: '10px' }}>Bill #{showReceipt.id.slice(-6).toUpperCase()}</div>
                                 <div style={{ textAlign: 'center', fontSize: '10px', marginBottom: '8px' }}>{new Date(showReceipt.createdAt).toLocaleString('th-TH')}</div>
                                 <div className="receipt-line" />
                                 {showReceipt.items.map((item, i) => (<div key={i} className="receipt-row"><span>{item.productName} ×{item.qty}</span><span>{formatCurrency(item.qty * item.price)}</span></div>))}

@@ -31,7 +31,10 @@ export default function Customers() {
         setShowModal(false); reload()
     }
 
-    const handleDelete = (id) => { deleteCustomer(id); toast('ลบลูกค้าสำเร็จ'); reload() }
+    const handleDelete = (id) => {
+        if (!window.confirm('ยืนยันลบลูกค้านี้? ข้อมูลจะไม่สามารถกู้คืนได้')) return
+        deleteCustomer(id); toast('ลบลูกค้าสำเร็จ'); reload()
+    }
 
     const openView = (c) => {
         setViewCustomer(c)

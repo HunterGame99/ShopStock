@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { getProducts, getProfitReport, getTopProducts, getSlowProducts, getReorderSuggestions, predictNextWeekSales, getLast7DaysData, exportData, importData, formatCurrency, formatNumber } from '../lib/storage.js'
+import { getProducts, getTransactions, getProfitReport, getTopProducts, getSlowProducts, getReorderSuggestions, predictNextWeekSales, getLast7DaysData, exportData, importData, formatCurrency, formatNumber } from '../lib/storage.js'
 import { useToast } from '../App.jsx'
 
 export default function Reports() {

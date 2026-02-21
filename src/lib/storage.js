@@ -1,6 +1,14 @@
 // ============================================
-// ShopStock v3.1 — Ultimate Data Layer
+// ShopStock v3.3 — Ultimate Data Layer
+// Hybrid: localStorage (cache) + Supabase (cloud)
 // ============================================
+
+import {
+    pushProducts, pushTransactions, pushCustomers, pushShifts,
+    pushPromotions, pushExpenses, pushTargets, pushHeldBills,
+    pushCredits, pushUsers, pushSettings,
+    syncAllFromSupabase, hasCloudData, uploadAllToSupabase
+} from './supabaseStorage.js'
 
 const PRODUCTS_KEY = 'shopstock_products';
 const TRANSACTIONS_KEY = 'shopstock_transactions';
@@ -15,6 +23,20 @@ const SETTINGS_KEY = 'shopstock_settings';
 const USERS_KEY = 'shopstock_users';
 const SESSION_KEY = 'shopstock_session';
 
+// ===== Supabase push mapping =====
+const pushMap = {
+    [PRODUCTS_KEY]: pushProducts,
+    [TRANSACTIONS_KEY]: pushTransactions,
+    [CUSTOMERS_KEY]: pushCustomers,
+    [SHIFTS_KEY]: pushShifts,
+    [PROMOTIONS_KEY]: pushPromotions,
+    [EXPENSES_KEY]: pushExpenses,
+    [TARGETS_KEY]: pushTargets,
+    [HELD_BILLS_KEY]: pushHeldBills,
+    [CREDITS_KEY]: pushCredits,
+    [USERS_KEY]: pushUsers,
+}
+
 // ===== ID Generator =====
 export function generateId() {
     return Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
@@ -22,7 +44,31 @@ export function generateId() {
 
 // ===== Generic CRUD helpers =====
 function getStore(key) { try { return JSON.parse(localStorage.getItem(key)) || [] } catch { return [] } }
-function setStore(key, data) { localStorage.setItem(key, JSON.stringify(data)) }
+function setStore(key, data) {
+    localStorage.setItem(key, JSON.stringify(data))
+    // Async push to Supabase (fire-and-forget)
+    const pushFn = pushMap[key]
+    if (pushFn) pushFn(data).catch(err => console.warn('[Supabase] push error:', err.message))
+}
+
+// ===== Startup Sync =====
+export async function initSync() {
+    try {
+        const cloudHasData = await hasCloudData()
+        if (cloudHasData) {
+            // Cloud has data → pull to localStorage
+            await syncAllFromSupabase()
+        } else {
+            // Cloud is empty → push local data up
+            const localProducts = getStore(PRODUCTS_KEY)
+            if (localProducts.length > 0) {
+                await uploadAllToSupabase()
+            }
+        }
+    } catch (err) {
+        console.warn('[Supabase] Sync failed, using local data:', err.message)
+    }
+}
 
 // ===== Products CRUD =====
 export function getProducts() { return getStore(PRODUCTS_KEY) }
@@ -85,6 +131,15 @@ export function updateCustomer(id, updates) {
 }
 
 export function deleteCustomer(id) { saveCustomers(getCustomers().filter(c => c.id !== id)) }
+
+export function redeemPoints(customerId, pointsToRedeem) {
+    const customers = getCustomers()
+    const customer = customers.find(c => c.id === customerId)
+    if (!customer || (customer.points || 0) < pointsToRedeem) return null
+    customer.points = (customer.points || 0) - pointsToRedeem
+    saveCustomers(customers)
+    return pointsToRedeem // 1 point = ฿1 discount
+}
 
 export function getCustomerPurchases(customerId) {
     return getTransactions().filter(tx => tx.customerId === customerId && tx.type === 'out')
@@ -322,7 +377,10 @@ export function getSettings() {
     try { return JSON.parse(localStorage.getItem(SETTINGS_KEY)) || { theme: 'dark', shopName: 'ShopStock' } }
     catch { return { theme: 'dark', shopName: 'ShopStock' } }
 }
-export function saveSettings(s) { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)) }
+export function saveSettings(s) {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(s))
+    pushSettings(s).catch(err => console.warn('[Supabase] push settings error:', err.message))
+}
 
 // ===== Formatting =====
 // ===== Formatting =====

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Fragment } from 'react'
 import { getTransactions, formatCurrency, formatDate, exportCSV, calcTxProfit, refundTransaction } from '../lib/storage.js'
 import { useToast } from '../App.jsx'
 
@@ -136,7 +136,7 @@ export default function History() {
                             <thead><tr><th>วันที่</th><th>ประเภท</th><th>รายการ</th><th>จำนวน</th><th>มูลค่า</th><th>กำไร</th><th></th></tr></thead>
                             <tbody>
                                 {filtered.map(tx => (
-                                    <>
+                                    <Fragment key={tx.id}>
                                         <tr key={tx.id} onClick={() => setExpanded(expanded === tx.id ? null : tx.id)} style={{ cursor: 'pointer' }}>
                                             <td style={{ whiteSpace: 'nowrap' }}>{formatDate(tx.createdAt)}</td>
                                             <td>
@@ -163,7 +163,7 @@ export default function History() {
                                         </tr>
                                         {expanded === tx.id && (
                                             <tr key={tx.id + '-detail'}>
-                                                <td colSpan="6" style={{ padding: 'var(--space-md)', background: 'var(--bg-primary)' }}>
+                                                <td colSpan="7" style={{ padding: 'var(--space-md)', background: 'var(--bg-primary)' }}>
                                                     {tx.items.map((item, i) => (
                                                         <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: i < tx.items.length - 1 ? '1px solid var(--border)' : 'none' }}>
                                                             <span>{item.productName} ×{item.qty}</span>
@@ -176,7 +176,7 @@ export default function History() {
                                                 </td>
                                             </tr>
                                         )}
-                                    </>
+                                    </Fragment>
                                 ))}
                             </tbody>
                         </table>

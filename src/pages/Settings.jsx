@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react'
 import { getSettings, saveSettings, getUsers, saveUsers, generateId } from '../lib/storage.js'
 import { useAuth, useToast } from '../App.jsx'
 
@@ -29,7 +30,10 @@ export default function Settings() {
     }
 
     const handleUserSave = () => {
-        if (!userForm.name || userForm.pin.length !== 4) { toast('ข้อมูลไม่ครบถ้วน', 'error'); return }
+        if (!userForm.name || userForm.pin.length !== 4) { toast('กรุณากรอกชื่อและ PIN 4 หลัก', 'error'); return }
+        // Check duplicate PIN
+        const duplicatePin = users.find(u => u.pin === userForm.pin && (!editingUser || u.id !== editingUser.id))
+        if (duplicatePin) { toast(`PIN ${userForm.pin} ถูกใช้โดย "${duplicatePin.name}" แล้ว กรุณาใช้ PIN อื่น`, 'error'); return }
         let newUsers = [...users]
         if (editingUser) {
             newUsers = newUsers.map(u => u.id === editingUser.id ? { ...u, ...userForm } : u)

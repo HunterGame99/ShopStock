@@ -12,7 +12,7 @@ import Shifts from './pages/Shifts.jsx'
 import Promotions from './pages/Promotions.jsx'
 import Expenses from './pages/Expenses.jsx'
 import Settings from './pages/Settings.jsx'
-import { getProducts, seedDemoData, getCurrentSession, authenticate, logout, getActiveShift, openShift, getUsers } from './lib/storage.js'
+import { getProducts, seedDemoData, getCurrentSession, authenticate, logout, getActiveShift, openShift, getUsers, initSync } from './lib/storage.js'
 
 const ToastContext = createContext(null)
 const AuthContext = createContext(null)
@@ -100,18 +100,37 @@ function LoginOverlay({ onLogin }) {
 function App() {
     const [user, setUser] = useState(null)
     const [activeShift, setActiveShift] = useState(null)
+    const [syncing, setSyncing] = useState(true)
 
     useEffect(() => {
-        seedDemoData()
-        setUser(getCurrentSession())
-        setActiveShift(getActiveShift())
-        // Ensure some users exist
-        getUsers()
+        async function startup() {
+            try {
+                await initSync()
+            } catch (err) {
+                console.warn('Sync failed, using local data:', err)
+            }
+            seedDemoData()
+            setUser(getCurrentSession())
+            setActiveShift(getActiveShift())
+            getUsers()
+            setSyncing(false)
+        }
+        startup()
     }, [])
 
     const handleLogout = () => {
         logout()
         setUser(null)
+    }
+
+    if (syncing) {
+        return (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
+                <div style={{ fontSize: '3rem', marginBottom: '1rem', animation: 'pulse 2s infinite' }}>☁️</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: 700 }}>กำลังซิงค์ข้อมูล...</div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>เชื่อมต่อ Supabase</div>
+            </div>
+        )
     }
 
     return (
