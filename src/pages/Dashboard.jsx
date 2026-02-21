@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { getProducts, getTransactions, getTodaySales, getLowStockProducts, getTotalStockValue, getTotalRetailValue, formatCurrency, formatNumber, formatDate, getTodayRevenue, getTodayProfit, getTodayExpenses, getRevenueTrend, getTopProducts, getSlowProducts, getLast7DaysData, getTodayTarget, setDailyTarget, getWeekComparison, getExpiringProducts, getNotifications } from '../lib/storage.js'
 import { useToast, useAuth } from '../App.jsx'
-import { canSeeProfit } from '../lib/permissions.js'
+import { canSeeProfit, canAccessPage } from '../lib/permissions.js'
 
 export default function Dashboard() {
     const [data, setData] = useState(null)
