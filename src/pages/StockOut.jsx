@@ -27,6 +27,7 @@ export default function StockOut() {
     const [showRecent, setShowRecent] = useState(false)
     const [showNumpad, setShowNumpad] = useState(false)
     const [showPortalQR, setShowPortalQR] = useState(false)
+    const [showScanner, setShowScanner] = useState(false)
     const [numpadTarget, setNumpadTarget] = useState(null)
     const [numpadValue, setNumpadValue] = useState('')
     const [pointsUsed, setPointsUsed] = useState(0)
@@ -49,20 +50,48 @@ export default function StockOut() {
     }
     useEffect(() => { reload() }, [])
 
+    // BroadcastChannel for Customer Display
+    useEffect(() => {
+        const channel = new BroadcastChannel('shopstock_pos_channel');
+        if (showReceipt) {
+            channel.postMessage({ type: 'PAYMENT_COMPLETE', details: showReceipt });
+        } else if (cart.length === 0) {
+            channel.postMessage({ type: 'CLEAR' });
+        } else {
+            channel.postMessage({ type: 'CART_UPDATE', cart });
+        }
+        return () => channel.close();
+    }, [cart, showReceipt]);
+
     useEffect(() => { setPromoDiscount(cart.length > 0 ? applyPromotions(cart) : 0) }, [cart])
 
     // Keyboard shortcuts
     useEffect(() => {
         const handleKey = (e) => {
             if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return
-            if (e.key === 'F1') { e.preventDefault(); if (cart.length > 0) handleCheckout() }
+            if (e.key === 'F1' || e.key === 'F8') { e.preventDefault(); if (cart.length > 0) handleCheckout() }
             if (e.key === 'F2') { e.preventDefault(); if (cart.length > 0) handleHoldBill() }
             if (e.key === 'F3') { e.preventDefault(); setShowHeld(true) }
-            if (e.key === 'Escape') { e.preventDefault(); setCart([]); setDiscount(''); setSelectedCustomer(''); toast('ล้างตะกร้า') }
+            if (e.key === ' ') {
+                e.preventDefault();
+                if (cart.length > 0 && !showCheckout && !showNumpad && !showHeld && !showRecent && !showReceipt && !showScanner) {
+                    handleCheckout();
+                }
+            }
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                if (showCheckout) setShowCheckout(false);
+                else if (showNumpad) setShowNumpad(false);
+                else if (showHeld) setShowHeld(false);
+                else if (showRecent) setShowRecent(false);
+                else if (showReceipt) setShowReceipt(null);
+                else if (showScanner) setShowScanner(false);
+                else { setCart([]); setDiscount(''); setSelectedCustomer(''); toast('ล้างตะกร้า') }
+            }
         }
         window.addEventListener('keydown', handleKey)
         return () => window.removeEventListener('keydown', handleKey)
-    }, [cart])
+    }, [cart, showCheckout, showNumpad, showHeld, showRecent, showReceipt])
 
     const categoryTabs = ['ทั้งหมด', ...CATEGORIES.map(c => c.name)]
 
@@ -209,7 +238,8 @@ export default function StockOut() {
                         <kbd>F1</kbd> ชำระ &nbsp; <kbd>F2</kbd> พักบิล &nbsp; <kbd>F3</kbd> เรียกบิล &nbsp; <kbd>Esc</kbd> ล้าง
                     </p>
                 </div>
-                <div style={{ display: 'flex', gap: 'var(--space-xs)' }}>
+                <div style={{ display: 'flex', gap: 'var(--space-xs)', alignItems: 'center' }}>
+                    <a href="/customer-display" target="_blank" className="btn btn-ghost btn-sm" style={{ textDecoration: 'none', fontSize: '12px' }}>📺 เปิดจอลูกค้า</a>
                     <button className="btn btn-secondary btn-sm" onClick={() => setShowHeld(true)} style={{ position: 'relative' }}>
                         📋 พักบิล {heldBills.length > 0 && <span className="notification-dot" style={{ position: 'static', marginLeft: '4px' }}>{heldBills.length}</span>}
                     </button>
@@ -247,14 +277,25 @@ export default function StockOut() {
                         ))}
                     </div>
 
-                    {/* Search + Voice */}
+                    {/* Search + Voice + Camera */}
                     <div style={{ display: 'flex', gap: 'var(--space-sm)', marginBottom: 'var(--space-sm)' }}>
                         <div className="table-search" style={{ flex: 1 }}>
                             <span className="search-icon">🔍</span>
-                            <input type="text" placeholder="ค้นหาสินค้า..." value={search} onChange={e => setSearch(e.target.value)} />
+                            <input type="text" placeholder="ค้นหาสินค้า / ยิงบาร์โค้ด..." value={search} onChange={e => setSearch(e.target.value)} autoFocus />
                         </div>
+                        <button className="btn btn-primary" onClick={() => setShowScanner(true)} title="สแกนด้วยกล้อง">📸</button>
                         <button className="btn btn-secondary" onClick={startVoiceSearch} title="ค้นหาด้วยเสียง">🎤</button>
                     </div>
+
+                    {showScanner && (
+                        <BarcodeScanner
+                            onScanSuccess={(code) => {
+                                handleBarcodeScan(code);
+                                // scanner stays open until manually closed so they can scan rapidly
+                            }}
+                            onClose={() => setShowScanner(false)}
+                        />
+                    )}
 
                     {/* Product Grid */}
                     <div className="product-grid">
@@ -458,18 +499,15 @@ export default function StockOut() {
                             </div>
                         </div>
                         <div className="modal-footer" style={{ display: 'flex', gap: '8px' }}>
-                            <button className="btn btn-secondary" onClick={() => setShowReceipt(null)} style={{ flex: 1 }}>ปิดหน้าต่าง</button>
-                            <button className="btn btn-primary" onClick={() => {
-                                const printBtn = document.getElementById('trigger-print')
-                                if (printBtn) printBtn.click()
-                            }} style={{ flex: 1 }}>🖨️ พิมพ์ใบเสร็จ</button>
+                            <button className="btn btn-secondary" onClick={() => setShowReceipt(null)} style={{ flex: 1 }}>ปิดหน้าต่าง <kbd>Esc</kbd></button>
+                            <button className="btn btn-primary" onClick={() => window.print()} style={{ flex: 1 }}>🖨️ พิมพ์ใบเสร็จ</button>
                         </div>
                     </div>
                 </div>
             )}
 
             {/* Hidden Thermal Printer Element */}
-            <ReceiptPrinter receiptData={showReceipt} settings={settings} />
+            <ReceiptPrinter transaction={showReceipt} shopSettings={settings} />
 
             {/* Held Bills Modal */}
             {showHeld && (

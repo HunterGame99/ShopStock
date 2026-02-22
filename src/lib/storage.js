@@ -22,7 +22,7 @@ const TARGETS_KEY = 'shopstock_targets';
 const HELD_BILLS_KEY = 'shopstock_held_bills';
 const CREDITS_KEY = 'shopstock_credits';
 const EXPENSES_KEY = 'shopstock_expenses';
-const SETTINGS_KEY = 'shopstock_settings';
+export const SETTINGS_KEY = 'shopstock_settings';
 const USERS_KEY = 'shopstock_users';
 const SESSION_KEY = 'shopstock_session';
 const BRANCHES_KEY = 'shopstock_branches';
@@ -64,7 +64,7 @@ export function getActiveBranchId() { return localStorage.getItem(ACTIVE_BRANCH_
 export function setActiveBranchId(id) { localStorage.setItem(ACTIVE_BRANCH_KEY, id) }
 
 // ===== Generic CRUD helpers (Branch Aware) =====
-function getStore(key) {
+export function getStore(key) {
     let allData = [];
     try { allData = JSON.parse(localStorage.getItem(key)) || [] } catch { return [] }
     

@@ -13,6 +13,7 @@ import Promotions from './pages/Promotions.jsx'
 import Expenses from './pages/Expenses.jsx'
 import Settings from './pages/Settings.jsx'
 import CustomerPortal from './pages/CustomerPortal.jsx'
+import CustomerDisplay from './pages/CustomerDisplay.jsx'
 import { getProducts, seedDemoData, getCurrentSession, authenticate, logout, getActiveShift, openShift, getUsers, initSync } from './lib/storage.js'
 import { isAdmin } from './lib/permissions.js'
 
@@ -155,6 +156,7 @@ function App() {
                     <ShiftContext.Provider value={{ activeShift, setActiveShift }}>
                         <Routes>
                             <Route path="/portal" element={<CustomerPortal />} />
+                            <Route path="/customer-display" element={<CustomerDisplay />} />
                             <Route path="*" element={
                                 !user ? (
                                     <LoginOverlay onLogin={setUser} />

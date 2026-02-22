@@ -1,96 +1,110 @@
-import { formatCurrency, formatDate } from '../lib/storage.js'
+import React from 'react';
+import { formatDate } from '../lib/storage.js';
 
-export default function ReceiptPrinter({ receiptData, settings, onPrinted }) {
-    if (!receiptData) return null
+export default function ReceiptPrinter({ transaction, shopSettings, ref }) {
+    if (!transaction) return null;
 
-    const handlePrint = () => {
-        window.print()
-        if (onPrinted) onPrinted()
-    }
-
+    // A hidden, print-only style block to format the receipt for 80mm thermal printers
     return (
-        <div className="receipt-container" style={{ display: 'none' }}>
-            {/* The actual printable area */}
-            <div id="printable-receipt" className="receipt-paper">
-                <div style={{ textAlign: 'center', marginBottom: '10px' }}>
-                    <h2 style={{ margin: '0 0 5px 0', fontSize: '18px' }}>{settings?.shopName || 'ShopStock'}</h2>
-                    <div style={{ fontSize: '12px' }}>{settings?.shopAddress}</div>
-                    <div style={{ fontSize: '12px' }}>Tel: {settings?.shopPhone}</div>
+        <div style={{ display: 'none' }}>
+            <div ref={ref} className="receipt-print-area" style={{
+                fontFamily: 'monospace, "Sarabun", sans-serif',
+                width: '80mm', // standard thermal printer width
+                padding: '0 5mm',
+                color: '#000',
+                background: '#fff',
+                fontSize: '12px',
+                lineHeight: '1.4'
+            }}>
+                <style>{`
+                    @media print {
+                        body * { visibility: hidden; }
+                        .receipt-print-area, .receipt-print-area * { visibility: visible; }
+                        .receipt-print-area { position: absolute; left: 0; top: 0; width: 100%; margin: 0; padding: 0; }
+                        @page { size: auto; margin: 0; }
+                    }
+                    .receipt-header { text-align: center; margin-bottom: 10px; }
+                    .receipt-header h2 { margin: 0; font-size: 16px; font-weight: bold; }
+                    .receipt-header p { margin: 2px 0; font-size: 12px; }
+                    .receipt-divider { border-bottom: 1px dashed #000; margin: 5px 0; }
+                    .receipt-table { width: 100%; text-align: left; }
+                    .receipt-table th, .receipt-table td { padding: 2px 0; }
+                    .receipt-table .right { text-align: right; }
+                    .receipt-table .center { text-align: center; }
+                    .receipt-summary { margin-top: 10px; }
+                    .receipt-summary table { width: 100%; }
+                    .receipt-footer { text-align: center; margin-top: 15px; font-size: 12px; }
+                `}</style>
+
+                <div className="receipt-header">
+                    <h2>{shopSettings?.shopName || 'ShopStock'}</h2>
+                    {shopSettings?.shopAddress && <p>{shopSettings.shopAddress}</p>}
+                    {shopSettings?.shopPhone && <p>Tel: {shopSettings.shopPhone}</p>}
+                    <div className="receipt-divider"></div>
+                    <p>บิล: #{transaction.id?.slice(-6).toUpperCase()}</p>
+                    <p>วันที่: {formatDate(transaction.createdAt)}</p>
+                    <p>พนักงาน: {transaction.staffName || 'System'}</p>
                 </div>
 
-                <div style={{ borderBottom: '1px dashed #000', margin: '10px 0' }} />
+                <div className="receipt-divider"></div>
 
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '5px' }}>
-                    <span>ใบเสร็จรับเงิน / Receipt</span>
-                    <span>#{receiptData.id?.slice(-6).toUpperCase()}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '10px' }}>
-                    <span>วันที่: {formatDate(receiptData.createdAt)}</span>
-                </div>
-
-                <div style={{ borderBottom: '1px dashed #000', margin: '10px 0' }} />
-
-                {/* Items */}
-                <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
+                <table className="receipt-table">
                     <thead>
-                        <tr style={{ borderBottom: '1px solid #000' }}>
-                            <th style={{ textAlign: 'left', paddingBottom: '4px' }}>รายการ</th>
-                            <th style={{ textAlign: 'center', paddingBottom: '4px' }}>จำนวน</th>
-                            <th style={{ textAlign: 'right', paddingBottom: '4px' }}>ราคา</th>
+                        <tr>
+                            <th>รายการ</th>
+                            <th className="center">บ.</th>
+                            <th className="right">รวม</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {receiptData.items?.map((item, i) => (
-                            <tr key={i}>
-                                <td style={{ padding: '4px 0', maxWidth: '120px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                    {item.productName || item.name}
-                                </td>
-                                <td style={{ textAlign: 'center', padding: '4px 0' }}>{item.qty}</td>
-                                <td style={{ textAlign: 'right', padding: '4px 0' }}>{formatCurrency(item.qty * item.price)}</td>
+                        {transaction.items?.map((item, idx) => (
+                            <tr key={idx}>
+                                <td>{item.productName} <br /><small>x{item.qty}</small></td>
+                                <td className="center">{item.price}</td>
+                                <td className="right">{(item.price * item.qty).toLocaleString()}</td>
                             </tr>
                         ))}
                     </tbody>
                 </table>
 
-                <div style={{ borderBottom: '1px dashed #000', margin: '10px 0' }} />
+                <div className="receipt-divider"></div>
 
-                {/* Summary */}
-                <div style={{ fontSize: '12px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <span>รวมเป็นเงิน</span>
-                        <span>{formatCurrency(receiptData.subtotal || receiptData.total + (receiptData.discount || 0))}</span>
-                    </div>
-                    {(receiptData.discount || 0) > 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                            <span>ส่วนลด</span>
-                            <span>-{formatCurrency(receiptData.discount)}</span>
-                        </div>
-                    )}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '14px', marginTop: '4px' }}>
-                        <span>ยอดสุทธิ</span>
-                        <span>{formatCurrency(receiptData.total)}</span>
-                    </div>
-
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4px' }}>
-                        <span>เงินรับ ({receiptData.paymentMethod === 'cash' ? 'เงินสด' : receiptData.paymentMethod === 'transfer' ? 'โอนเงิน' : 'อื่นๆ'})</span>
-                        <span>{formatCurrency(receiptData.payment || receiptData.total)}</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <span>เงินทอน</span>
-                        <span>{formatCurrency(receiptData.change || 0)}</span>
-                    </div>
+                <div className="receipt-summary">
+                    <table>
+                        <tbody>
+                            <tr>
+                                <td>รวมเป็นเงิน</td>
+                                <td className="right">{transaction.subtotal?.toLocaleString()}</td>
+                            </tr>
+                            {transaction.discount > 0 && (
+                                <tr>
+                                    <td>ส่วนลด</td>
+                                    <td className="right">-{transaction.discount?.toLocaleString()}</td>
+                                </tr>
+                            )}
+                            <tr style={{ fontWeight: 'bold', fontSize: '14px' }}>
+                                <td>ยอดสุทธิ</td>
+                                <td className="right">{transaction.total?.toLocaleString()}</td>
+                            </tr>
+                            <tr>
+                                <td>รับเงิน ({transaction.paymentMethod === 'cash' ? 'เงินสด' : transaction.paymentMethod === 'qr' ? 'สแกน QR' : 'โอน'})</td>
+                                <td className="right">{transaction.payment?.toLocaleString()}</td>
+                            </tr>
+                            <tr>
+                                <td>เงินทอน</td>
+                                <td className="right">{transaction.change?.toLocaleString()}</td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
 
-                <div style={{ borderBottom: '1px dashed #000', margin: '10px 0' }} />
-
-                <div style={{ textAlign: 'center', fontSize: '12px', marginTop: '15px' }}>
-                    <div style={{ fontWeight: 'bold' }}>{settings?.receiptFooter || 'ขอบคุณที่ใช้บริการ'}</div>
-                    <div style={{ marginTop: '5px', fontSize: '10px', color: '#666' }}>Powered by ShopStock</div>
+                <div className="receipt-divider"></div>
+                <div className="receipt-footer">
+                    <p>{shopSettings?.receiptFooter || 'ขอบคุณที่ใช้บริการค่ะ 🙏'}</p>
+                    <p><small>Powered by ShopStock</small></p>
                 </div>
+
             </div>
-
-            {/* Print Trigger Button (Visible temporarily for the user to click if auto-print fails) */}
-            <button id="trigger-print" onClick={handlePrint} style={{ display: 'none' }}>Print</button>
         </div>
-    )
+    );
 }

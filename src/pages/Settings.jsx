@@ -11,7 +11,6 @@ export default function Settings() {
         receiptFooter: 'ขอบคุณที่ใช้บริการ ❤️',
         vatEnabled: false,
         vatRate: 7,
-        vatRate: 7,
         theme: 'dark',
         telegramBotToken: '',
         telegramChatId: '',
