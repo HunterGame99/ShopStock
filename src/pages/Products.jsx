@@ -160,7 +160,7 @@ export default function Products() {
                         </select>
                         {canEditProducts(role) && (
                             <>
-                                <button className="btn btn-secondary" onClick={() => exportCSVProducts()} title="ส่งออก CSV">📤</button>
+                                <button className="btn btn-secondary" onClick={() => exportCSVProducts()} title="ส่งออก CSV">📄 ⬇️ ส่งออกสต็อก (CSV)</button>
                                 <button className="btn btn-secondary" onClick={() => {
                                     const input = document.createElement('input')
                                     input.type = 'file'
@@ -181,7 +181,7 @@ export default function Products() {
                                         reader.readAsText(file)
                                     }
                                     input.click()
-                                }} title="นำเข้า CSV">📥</button>
+                                }} title="นำเข้า CSV">📁 ⬆️ นำเข้าสต็อก (CSV)</button>
                                 <button className="btn btn-primary" onClick={openAdd}>➕</button>
                             </>
                         )}
@@ -387,49 +387,6 @@ export default function Products() {
                         <div className="modal-footer">
                             <button className="btn btn-secondary" onClick={() => setDeleteConfirm(null)}>ยกเลิก</button>
                             <button className="btn btn-danger" onClick={() => handleDelete(deleteConfirm)}>🗑️ ลบสินค้า</button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Print Barcode Modal */}
-            {printBarcodeProduct && (
-                <div className="modal-overlay" onClick={() => setPrintBarcodeProduct(null)}>
-                    <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '350px', textAlign: 'center' }}>
-                        <div className="modal-header">
-                            <h3>🏷️ พิมพ์บาร์โค้ด</h3>
-                            <button className="btn btn-ghost btn-icon" onClick={() => setPrintBarcodeProduct(null)}>✕</button>
-                        </div>
-                        <div className="modal-body">
-                            <div id="barcode-printable-area" style={{ background: 'white', padding: '20px', borderRadius: '8px', marginBottom: 'var(--space-md)' }}>
-                                <div style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '5px', color: 'black' }}>
-                                    {printBarcodeProduct.name}
-                                </div>
-                                <Barcode
-                                    value={printBarcodeProduct.barcode || printBarcodeProduct.sku}
-                                    format="CODE128"
-                                    width={1.5}
-                                    height={50}
-                                    displayValue={true}
-                                    fontSize={12}
-                                    margin={0}
-                                />
-                                <div style={{ fontSize: '14px', marginTop: '5px', fontWeight: 'bold', color: 'black' }}>
-                                    ราคา: {formatCurrency(printBarcodeProduct.sellPrice)}
-                                </div>
-                            </div>
-                            <p style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)' }}>* รองรับเฉพาะตัวเลขและอักษรภาษาอังกฤษเท่านั้น</p>
-                        </div>
-                        <div className="modal-footer">
-                            <button className="btn btn-secondary" onClick={() => setPrintBarcodeProduct(null)}>ปิด</button>
-                            <button className="btn btn-primary" onClick={() => {
-                                const printContent = document.getElementById('barcode-printable-area').innerHTML
-                                const originalBody = document.body.innerHTML
-                                document.body.innerHTML = `<div style="text-align:center; padding: 10px;">${printContent}</div>`
-                                window.print()
-                                document.body.innerHTML = originalBody
-                                window.location.reload()
-                            }}>🖨️ พิมพ์ดวงนี้</button>
                         </div>
                     </div>
                 </div>
