@@ -20,7 +20,7 @@ const toSnake = (obj) => {
         closingCash: 'closing_cash', productId: 'product_id', minQty: 'min_qty',
         shopName: 'shop_name', shopAddress: 'shop_address', shopPhone: 'shop_phone',
         receiptFooter: 'receipt_footer', vatEnabled: 'vat_enabled', vatRate: 'vat_rate',
-        paidAt: 'paid_at', imageUrl: 'image_url'
+        paidAt: 'paid_at', imageUrl: 'image_url', isDeleted: 'is_deleted'
     }
     const result = {}
     for (const [key, val] of Object.entries(obj)) {
@@ -43,7 +43,7 @@ const toCamel = (obj) => {
         closing_cash: 'closingCash', product_id: 'productId', min_qty: 'minQty',
         shop_name: 'shopName', shop_address: 'shopAddress', shop_phone: 'shopPhone',
         receipt_footer: 'receiptFooter', vat_enabled: 'vatEnabled', vat_rate: 'vatRate',
-        paid_at: 'paidAt', image_url: 'imageUrl'
+        paid_at: 'paidAt', image_url: 'imageUrl', is_deleted: 'isDeleted'
     }
     const result = {}
     for (const [key, val] of Object.entries(obj)) {
@@ -73,9 +73,9 @@ async function deleteRow(table, id) {
 }
 
 async function replaceAll(table, rows) {
-    if (rows.length === 0) {
-        // Clear all data if empty
-        await supabase.from(table).delete().neq('id', '__never__')
+    if (!rows || rows.length === 0) {
+        // PROTECT: ป้องกันการลบข้อมูลทั้งหมดบน Cloud หาก Local ว่างเปล่า (เช่นกรณีเปิดแอปครั้งแรกบนเครื่องใหม่)
+        // เราจะไม่ทำการ Delete ทั้งตารางอีกต่อไป
         return
     }
     const snakeRows = rows.map(toSnake)
@@ -85,15 +85,8 @@ async function replaceAll(table, rows) {
         const { error } = await supabase.from(table).upsert(batch, { onConflict: 'id' })
         if (error) console.error(`[Supabase] upsert ${table} batch:`, error.message)
     }
-    // Delete rows that no longer exist locally
-    const localIds = rows.map(r => r.id)
-    const { data: cloudRows } = await supabase.from(table).select('id')
-    if (cloudRows) {
-        const toDelete = cloudRows.filter(r => !localIds.includes(r.id)).map(r => r.id)
-        if (toDelete.length > 0) {
-            await supabase.from(table).delete().in('id', toDelete)
-        }
-    }
+    // เอาโค้ดทำการลบข้อมูลบน Cloud อัตโนมัติ (Delete rows that no longer exist locally) ออกทั้งหมด
+    // เพื่อให้รองรับการทำงานหลายเครื่อง (Multi-device) โดยที่เครื่อง A จะไม่ไปเผลอลบข้อมูลของเครื่อง B ที่เพิ่งสร้างใหม่
 }
 
 // ===== Table-specific push functions =====
@@ -125,7 +118,7 @@ export async function pushSettings(settings) {
 
 // ===== Sync all from Supabase → returns data for localStorage =====
 export async function syncAllFromSupabase() {
-    console.log('[Supabase] Syncing all data from cloud...')
+    console.log('[Supabase] Syncing all data from cloud... (Parallel)')
     const results = {}
     const tables = [
         { key: 'shopstock_products', table: 'products' },
@@ -140,21 +133,31 @@ export async function syncAllFromSupabase() {
         { key: 'shopstock_users', table: 'users' },
     ]
 
-    for (const { key, table } of tables) {
-        const data = await fetchAll(table)
-        if (data !== null) {
-            results[key] = data
-            localStorage.setItem(key, JSON.stringify(data))
-        }
-    }
+    // Fetch all tables in parallel
+    const fetchPromises = tables.map(({ key, table }) =>
+        fetchAll(table).then(data => ({ key, data }))
+    )
 
     // Settings is a single row
-    const { data: settingsData, error } = await supabase.from('settings').select('*').eq('id', 'default').single()
-    if (!error && settingsData) {
-        const camelSettings = toCamel(settingsData)
-        delete camelSettings.id // don't store 'id' in settings
-        results['shopstock_settings'] = camelSettings
-        localStorage.setItem('shopstock_settings', JSON.stringify(camelSettings))
+    const fetchSettings = supabase.from('settings').select('*').eq('id', 'default').single()
+        .then(({ data, error }) => {
+            if (error || !data) return { key: 'shopstock_settings', data: null }
+            const camelSettings = toCamel(data)
+            delete camelSettings.id // don't store 'id' in settings
+            return { key: 'shopstock_settings', data: camelSettings }
+        })
+
+    // Wait for all fetches to finish (resolves regardless of individual failures)
+    const allPromises = [...fetchPromises, fetchSettings]
+    const settledResults = await Promise.allSettled(allPromises)
+
+    for (const result of settledResults) {
+        if (result.status === 'fulfilled' && result.value.data !== null) {
+            results[result.value.key] = result.value.data
+            localStorage.setItem(result.value.key, JSON.stringify(result.value.data))
+        } else if (result.status === 'rejected') {
+            console.error('[Supabase] Sync Error for a table:', result.reason)
+        }
     }
 
     console.log('[Supabase] Sync complete!')
@@ -170,26 +173,47 @@ export async function hasCloudData() {
 
 // ===== Upload all localStorage data to Supabase (first-time migration) =====
 export async function uploadAllToSupabase() {
-    console.log('[Supabase] Uploading local data to cloud...')
+    console.log('[Supabase] Uploading local data to cloud... (Parallel)')
     const parse = (key) => { try { return JSON.parse(localStorage.getItem(key)) || [] } catch { return [] } }
 
+    const tables = [
+        { key: 'shopstock_products', table: 'products' },
+        { key: 'shopstock_transactions', table: 'transactions' },
+        { key: 'shopstock_customers', table: 'customers' },
+        { key: 'shopstock_shifts', table: 'shifts' },
+        { key: 'shopstock_promotions', table: 'promotions' },
+        { key: 'shopstock_expenses', table: 'expenses' },
+        { key: 'shopstock_targets', table: 'targets' },
+        { key: 'shopstock_held_bills', table: 'held_bills' },
+        { key: 'shopstock_credits', table: 'credits' },
+        { key: 'shopstock_users', table: 'users' },
+    ]
+
     try {
-        await pushProducts(parse('shopstock_products'))
-        await pushTransactions(parse('shopstock_transactions'))
-        await pushCustomers(parse('shopstock_customers'))
-        await pushShifts(parse('shopstock_shifts'))
-        await pushPromotions(parse('shopstock_promotions'))
-        await pushExpenses(parse('shopstock_expenses'))
-        await pushTargets(parse('shopstock_targets'))
-        await pushHeldBills(parse('shopstock_held_bills'))
-        await pushCredits(parse('shopstock_credits'))
-        await pushUsers(parse('shopstock_users'))
+        const uploadPromises = tables.map(({ key, table }) => {
+            const data = parse(key)
+            return replaceAll(table, data)
+        })
 
         // Settings
-        try {
-            const settings = JSON.parse(localStorage.getItem('shopstock_settings')) || {}
-            if (Object.keys(settings).length > 0) await pushSettings(settings)
-        } catch { }
+        const settingsPromise = (async () => {
+            try {
+                const settings = JSON.parse(localStorage.getItem('shopstock_settings')) || {}
+                if (Object.keys(settings).length > 0) await pushSettings(settings)
+            } catch (err) {
+                console.error('[Supabase] pushSettings error:', err)
+                throw err
+            }
+        })()
+
+        const allPromises = [...uploadPromises, settingsPromise]
+        const settledResults = await Promise.allSettled(allPromises)
+        
+        const hasError = settledResults.some(r => r.status === 'rejected')
+        if (hasError) {
+             console.error('[Supabase] Some tables failed to upload.')
+             throw new Error('Partial upload failure')
+        }
 
         // Clear the sync flag since we successfully pushed everything
         localStorage.removeItem('shopstock_needs_sync')

@@ -157,11 +157,12 @@ export async function initSync() {
 }
 
 // ===== Products CRUD =====
-export function getProducts() { return getStore(PRODUCTS_KEY) }
+export function getAllProducts() { return getStore(PRODUCTS_KEY) }
+export function getProducts() { return getAllProducts().filter(p => !p.isDeleted) }
 export function saveProducts(products) { setStore(PRODUCTS_KEY, products) }
 
 export function addProduct(product) {
-    const products = getProducts()
+    const products = getAllProducts()
     const newProduct = {
         ...product, id: generateId(),
         stock: Number(product.stock) || 0, costPrice: Number(product.costPrice) || 0,
@@ -176,7 +177,7 @@ export function addProduct(product) {
 }
 
 export function updateProduct(id, updates) {
-    const products = getProducts()
+    const products = getAllProducts()
     const index = products.findIndex(p => p.id === id)
     if (index === -1) return null
     products[index] = { ...products[index], ...updates }
@@ -184,15 +185,23 @@ export function updateProduct(id, updates) {
     return products[index]
 }
 
-export function deleteProduct(id) { saveProducts(getProducts().filter(p => p.id !== id)) }
+export function deleteProduct(id) { 
+    const products = getAllProducts()
+    const index = products.findIndex(p => p.id === id)
+    if (index !== -1) {
+        products[index].isDeleted = true
+        saveProducts(products)
+    }
+}
 export function getProductById(id) { return getProducts().find(p => p.id === id) || null }
 
 // ===== Customers CRUD =====
-export function getCustomers() { return getStore(CUSTOMERS_KEY) }
+export function getAllCustomers() { return getStore(CUSTOMERS_KEY) }
+export function getCustomers() { return getAllCustomers().filter(c => !c.isDeleted) }
 export function saveCustomers(c) { setStore(CUSTOMERS_KEY, c) }
 
 export function addCustomer(customer) {
-    const customers = getCustomers()
+    const customers = getAllCustomers()
     const newCustomer = {
         id: generateId(),
         ...customer,
@@ -208,7 +217,7 @@ export function addCustomer(customer) {
 }
 
 export function updateCustomer(id, updates) {
-    const customers = getCustomers()
+    const customers = getAllCustomers()
     const i = customers.findIndex(c => c.id === id)
     if (i === -1) return null
     customers[i] = { ...customers[i], ...updates }
@@ -216,10 +225,17 @@ export function updateCustomer(id, updates) {
     return customers[i]
 }
 
-export function deleteCustomer(id) { saveCustomers(getCustomers().filter(c => c.id !== id)) }
+export function deleteCustomer(id) { 
+    const customers = getAllCustomers()
+    const index = customers.findIndex(c => c.id === id)
+    if (index !== -1) {
+        customers[index].isDeleted = true
+        saveCustomers(customers)
+    }
+}
 
 export function redeemPoints(customerId, pointsToRedeem) {
-    const customers = getCustomers()
+    const customers = getAllCustomers()
     const customer = customers.find(c => c.id === customerId)
     if (!customer || (customer.points || 0) < pointsToRedeem) return null
     customer.points = (customer.points || 0) - pointsToRedeem
@@ -319,17 +335,18 @@ export function refundTransaction(txId) {
 }
 
 // ===== Held Bills =====
-export function getHeldBills() { return getStore(HELD_BILLS_KEY) }
+export function getAllHeldBills() { return getStore(HELD_BILLS_KEY) }
+export function getHeldBills() { return getAllHeldBills().filter(b => !b.isDeleted) }
 export function saveHeldBills(bills) { setStore(HELD_BILLS_KEY, bills) }
 
 export function holdBill(cart, customerId, note) {
-    const bills = getHeldBills()
+    const bills = getAllHeldBills()
     bills.push({ id: generateId(), cart, customerId: customerId || null, note: note || '', createdAt: new Date().toISOString() })
     saveHeldBills(bills)
 }
 
 export function resumeBill(billId) {
-    const bills = getHeldBills()
+    const bills = getAllHeldBills()
     const bill = bills.find(b => b.id === billId)
     if (!bill) return null
     saveHeldBills(bills.filter(b => b.id !== billId))
@@ -337,7 +354,12 @@ export function resumeBill(billId) {
 }
 
 export function deleteHeldBill(billId) {
-    saveHeldBills(getHeldBills().filter(b => b.id !== billId))
+    const bills = getAllHeldBills()
+    const index = bills.findIndex(b => b.id === billId)
+    if (index !== -1) {
+        bills[index].isDeleted = true
+        saveHeldBills(bills)
+    }
 }
 
 // ===== Credits / Debt =====
@@ -367,7 +389,8 @@ export function getRecentSales(limit = 5) {
 }
 
 // ===== Expenses =====
-export function getExpenses() { return getStore(EXPENSES_KEY) }
+export function getAllExpenses() { return getStore(EXPENSES_KEY) }
+export function getExpenses() { return getAllExpenses().filter(e => !e.isDeleted) }
 export function saveExpenses(e) { setStore(EXPENSES_KEY, e) }
 
 export function getExpensesBetween(start, end) {
@@ -379,7 +402,7 @@ export function getExpensesBetween(start, end) {
 }
 
 export function addExpense(expense) {
-    const expenses = getExpenses()
+    const expenses = getAllExpenses()
     const newExpense = {
         id: generateId(),
         ...expense,
@@ -391,7 +414,12 @@ export function addExpense(expense) {
 }
 
 export function deleteExpense(id) {
-    saveExpenses(getExpenses().filter(e => e.id !== id))
+    const expenses = getAllExpenses()
+    const index = expenses.findIndex(e => e.id === id)
+    if (index !== -1) {
+        expenses[index].isDeleted = true
+        saveExpenses(expenses)
+    }
 }
 
 export const EXPENSE_CATEGORIES = [
@@ -405,23 +433,31 @@ export const EXPENSE_CATEGORIES = [
 
 
 // ===== Promotions =====
-export function getPromotions() { return getStore(PROMOTIONS_KEY) }
+export function getAllPromotions() { return getStore(PROMOTIONS_KEY) }
+export function getPromotions() { return getAllPromotions().filter(p => !p.isDeleted) }
 export function savePromotions(p) { setStore(PROMOTIONS_KEY, p) }
 
 export function addPromotion(promo) {
-    const promos = getPromotions()
+    const promos = getAllPromotions()
     promos.push({ ...promo, id: generateId(), active: true, createdAt: new Date().toISOString() })
     savePromotions(promos)
 }
 
 export function togglePromotion(id) {
-    const promos = getPromotions()
+    const promos = getAllPromotions()
     const p = promos.find(pr => pr.id === id)
     if (p) p.active = !p.active
     savePromotions(promos)
 }
 
-export function deletePromotion(id) { savePromotions(getPromotions().filter(p => p.id !== id)) }
+export function deletePromotion(id) { 
+    const promos = getAllPromotions()
+    const index = promos.findIndex(p => p.id === id)
+    if (index !== -1) {
+        promos[index].isDeleted = true
+        savePromotions(promos)
+    }
+}
 
 // Apply promotions to cart items → returns discount amount
 export function applyPromotions(cartItems) {
@@ -701,7 +737,7 @@ export function getProfitReport(days = 30) {
 
 // ===== Backup & Export =====
 export function exportData() {
-    return JSON.stringify({ version: '3.0', exportedAt: new Date().toISOString(), products: getProducts(), transactions: getTransactions(), customers: getCustomers(), shifts: getShifts(), promotions: getPromotions(), targets: getTargets() }, null, 2)
+    return JSON.stringify({ version: '3.0', exportedAt: new Date().toISOString(), products: getAllProducts(), transactions: getTransactions(), customers: getAllCustomers(), shifts: getShifts(), promotions: getAllPromotions(), targets: getTargets() }, null, 2)
 }
 
 export function importData(jsonString) {
