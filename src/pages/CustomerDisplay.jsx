@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { getStore, SETTINGS_KEY, MEMBERSHIP_TIERS, applyPromotions, playSound, speak } from '../lib/storage.js';
+import { getStore, SETTINGS_KEY, MEMBERSHIP_TIERS, applyPromotions, playSound, speak, getSettings } from '../lib/storage.js';
 import { generatePromptPayQR } from '../lib/promptpay.js';
 
 export default function CustomerDisplay() {
@@ -14,7 +14,7 @@ export default function CustomerDisplay() {
 
     useEffect(() => {
         try {
-            const settings = getStore(SETTINGS_KEY);
+            const settings = getSettings();
             if (settings && settings.shopName) setShopName(settings.shopName);
         } catch (e) { /* ignore */ }
     }, []);
@@ -59,7 +59,7 @@ export default function CustomerDisplay() {
     const [adBanners, setAdBanners] = useState([]);
     useEffect(() => {
         try {
-            const settings = getStore(SETTINGS_KEY);
+            const settings = getSettings();
             if (settings && settings.adBanners) {
                 const banners = settings.adBanners.split(',').map(s => s.trim()).filter(s => s);
                 setAdBanners(banners);
@@ -78,7 +78,7 @@ export default function CustomerDisplay() {
     // QR Timer Logic (Countdown or Count up)
     const [qrTimeoutLimit, setQrTimeoutLimit] = useState(0);
     useEffect(() => {
-        try { const s = getStore(SETTINGS_KEY); setQrTimeoutLimit(Number(s?.qrTimeout) || 0); } catch(e){}
+        try { const s = getSettings(); setQrTimeoutLimit(Number(s?.qrTimeout) || 0); } catch(e){}
     }, []);
 
     useEffect(() => {
