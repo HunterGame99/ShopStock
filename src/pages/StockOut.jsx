@@ -14,6 +14,7 @@ export default function StockOut() {
     const [search, setSearch] = useState('')
     const [cart, setCart] = useState([])
     const [paymentMethod, setPaymentMethod] = useState('cash')
+    const [splitCashPart, setSplitCashPart] = useState('')
     const [showCheckout, setShowCheckout] = useState(false)
     const [payment, setPayment] = useState('')
     const [showReceipt, setShowReceipt] = useState(null)
@@ -68,8 +69,15 @@ export default function StockOut() {
     const posChannelRef = useRef(null);
     useEffect(() => {
         posChannelRef.current = new BroadcastChannel('shopstock_pos_channel');
+        posChannelRef.current.onmessage = (event) => {
+            if (event.data?.type === 'QR_TIMEOUT') {
+                toast('⏳ หมดเวลาสแกนรับชำระเงิน กรุณาทำรายการใหม่', 'warning');
+                setShowCheckout(false);
+                playSound('error');
+            }
+        };
         return () => { posChannelRef.current?.close(); posChannelRef.current = null }
-    }, []);
+    }, [toast]);
     useEffect(() => {
         const ch = posChannelRef.current;
         if (!ch) return;
@@ -278,18 +286,36 @@ export default function StockOut() {
         setShowMemberStep(false)
         setPayment(paymentMethod === 'cash' ? '' : cartTotal.toString())
         setShowCheckout(true)
-        broadcastPaymentQR(paymentMethod, cartTotal)
+        if (paymentMethod === 'split') {
+            broadcastPaymentQR('qr', Math.max(0, cartTotal - (Number(splitCashPart) || 0)))
+        } else {
+            broadcastPaymentQR(paymentMethod, cartTotal)
+        }
     }
 
     const confirmCheckout = () => {
-        const payAmount = Number(payment)
-        if (paymentMethod === 'cash' && payAmount < cartTotal) { toast('เงินไม่พอ', 'error'); return }
+        let payAmount = Number(payment)
+        let changeAmount = 0
+        let noteText = ''
+
+        if (paymentMethod === 'cash') {
+            if (payAmount < cartTotal) { toast('เงินไม่พอ', 'error'); return }
+            changeAmount = Math.max(0, payAmount - cartTotal)
+        } else if (paymentMethod === 'split') {
+            const cashPart = Number(splitCashPart) || 0
+            const qrPart = Math.max(0, cartTotal - cashPart)
+            payAmount = cartTotal
+            noteText = `สด ${formatCurrency(cashPart)} | โอน ${formatCurrency(qrPart)}`
+        } else {
+            payAmount = cartTotal
+        }
+
         const invoiceNo = generateInvoiceNumber()
         const tx = addTransaction({
             type: 'out', items: cart.map(c => ({ productId: c.productId, productName: c.productName, qty: c.qty, price: c.price })),
             total: cartTotal, subtotal, discount: totalDiscount, payment: payAmount,
-            change: paymentMethod === 'cash' ? payAmount - cartTotal : 0, paymentMethod,
-            customerId: selectedCustomer || null, note: '', invoiceNo,
+            change: changeAmount, paymentMethod,
+            customerId: selectedCustomer || null, note: noteText, invoiceNo,
         })
         // Redeem points if used
         if (pointsUsed > 0 && selectedCustomer) {
@@ -297,17 +323,18 @@ export default function StockOut() {
         }
         playSound('success')
         broadcastPaymentQRClear()
-        setShowReceipt({ ...tx, payment: payAmount, change: paymentMethod === 'cash' ? payAmount - cartTotal : 0 })
+        setShowReceipt({ ...tx, payment: paymentMethod === 'cash' ? Number(payment) : payAmount, change: changeAmount })
         if (appliedCoupon) { useCoupon(appliedCoupon.coupon.id) }
-        setShowCheckout(false); setCart([]); setPayment(''); setSelectedCustomer(''); setPointsUsed(0); setAppliedCoupon(null); setCouponCode('')
+        setShowCheckout(false); setCart([]); setPayment(''); setSelectedCustomer(''); setPointsUsed(0); setAppliedCoupon(null); setCouponCode(''); setSplitCashPart('')
         toast('ขายสำเร็จ! 🎉')
 
         // Send LINE Notify if configured
         const s = getSettings()
         if (s.lineNotifyToken) {
-            const methodEmoji = paymentMethod === 'cash' ? '💵' : (paymentMethod === 'transfer' ? '📱' : '📲');
-            const pt = paymentMethod === 'cash' ? 'เงินสด' : (paymentMethod === 'transfer' ? 'โอนเงิน' : 'QR Code');
-            const msg = `\n💰 บิลใหม่: ${invoiceNo}\n${methodEmoji} รับเงิน: ${formatCurrency(cartTotal)}\n🛒 จำนวน: ${cart.reduce((s,c)=>s+c.qty,0)} ชิ้น\n💳 ช่องทาง: ${pt}`;
+            const methodEmoji = paymentMethod === 'cash' ? '💵' : (paymentMethod === 'transfer' ? '📱' : (paymentMethod === 'split' ? '🌗' : '📲'));
+            const pt = paymentMethod === 'cash' ? 'เงินสด' : (paymentMethod === 'transfer' ? 'โอนเงิน' : (paymentMethod === 'split' ? 'ผสม' : 'QR Code'));
+            const extra = paymentMethod === 'split' ? ` (${noteText})` : '';
+            const msg = `\n💰 บิลใหม่: ${invoiceNo}\n${methodEmoji} รับเงิน: ${formatCurrency(cartTotal)}\n🛒 จำนวน: ${cart.reduce((s,c)=>s+c.qty,0)} ชิ้น\n💳 ช่องทาง: ${pt}${extra}`;
             sendLineNotify(s.lineNotifyToken, msg);
         }
 
@@ -334,6 +361,10 @@ export default function StockOut() {
         if (key === '⌫') { setNumpadValue(v => v.slice(0, -1)); return }
         if (key === '✓') {
             if (numpadTarget === 'payment') setPayment(numpadValue)
+            if (numpadTarget === 'splitCashPart') {
+                setSplitCashPart(numpadValue)
+                broadcastPaymentQR('qr', Math.max(0, cartTotal - (Number(numpadValue) || 0)))
+            }
 
             setShowNumpad(false); setNumpadValue(''); return
         }
@@ -664,8 +695,8 @@ export default function StockOut() {
                             {/* Action Buttons */}
                             <div className="cart-checkout">
                                 <div style={{ display: 'flex', gap: '4px', marginBottom: '6px' }}>
-                                    {[{ key: 'cash', icon: '💵', label: 'สด' }, { key: 'transfer', icon: '📱', label: 'โอน' }, { key: 'qr', icon: '📲', label: 'QR' }].map(m => (
-                                        <button key={m.key} className={`btn btn-sm ${paymentMethod === m.key ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setPaymentMethod(m.key)} style={{ flex: 1, justifyContent: 'center', fontSize: 'var(--font-size-xs)' }}>
+                                    {[{ key: 'cash', icon: '💵', label: 'สด' }, { key: 'transfer', icon: '📱', label: 'โอน' }, { key: 'qr', icon: '📲', label: 'QR' }, { key: 'split', icon: '🌗', label: 'ผสม' }].map(m => (
+                                        <button key={m.key} className={`btn btn-sm ${paymentMethod === m.key ? 'btn-primary' : 'btn-secondary'}`} onClick={() => { setPaymentMethod(m.key); if (m.key === 'split' && showCheckout) broadcastPaymentQR('qr', Math.max(0, cartTotal - (Number(splitCashPart) || 0))); else if (showCheckout) broadcastPaymentQR(m.key, cartTotal); }} style={{ flex: 1, justifyContent: 'center', fontSize: 'var(--font-size-xs)' }}>
                                             {m.icon} {m.label}
                                         </button>
                                     ))}
@@ -846,6 +877,21 @@ export default function StockOut() {
                                         {[cartTotal, 20, 50, 100, 200, 500, 1000].map(a => (
                                             <button key={a} className="btn btn-secondary btn-sm" onClick={() => setPayment(a.toString())}>{a === cartTotal ? '💵 พอดี' : formatCurrency(a)}</button>
                                         ))}
+                                    </div>
+                                </>
+                            ) : paymentMethod === 'split' ? (
+                                <>
+                                    <div className="form-group" style={{ marginTop: 'var(--space-lg)' }}>
+                                        <label>💵 ยอดตัดเป็นเงินสด (ส่วนที่ 1)</label>
+                                        <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
+                                            <input className="form-control" type="number" min="0" max={cartTotal} value={splitCashPart} onChange={e => { const val = e.target.value; setSplitCashPart(val); broadcastPaymentQR('qr', Math.max(0, cartTotal - (Number(val) || 0))); }} placeholder={`ยอดเงินสด`} autoFocus style={{ fontSize: 'var(--font-size-xl)', textAlign: 'center', fontWeight: 700 }} />
+                                            <button className="btn btn-secondary" onClick={() => { setNumpadTarget('splitCashPart'); setNumpadValue(splitCashPart); setShowNumpad(true) }}>🔢</button>
+                                        </div>
+                                    </div>
+                                    <p style={{ color: 'var(--text-secondary)', fontSize: '11px', textAlign: 'center', marginTop: '12px' }}>* ส่วนที่เหลือจากเงินสด จะแสดง QR Code ให้สแกนจ่ายบนจออัตโนมัติ</p>
+                                    <div style={{ marginTop: '16px', background: 'var(--bg-secondary)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border)', textAlign: 'center' }}>
+                                        <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>📲 ยอดสแกน QR โอนส่วนที่เหลือ</span>
+                                        <div style={{ fontSize: '24px', fontWeight: 800, color: '#60a5fa' }}>{formatCurrency(Math.max(0, cartTotal - (Number(splitCashPart) || 0)))}</div>
                                     </div>
                                 </>
                             ) : (
@@ -1054,7 +1100,7 @@ export default function StockOut() {
             {showNumpad && (
                 <div className="modal-overlay" onClick={() => setShowNumpad(false)}>
                     <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '320px' }}>
-                        <div className="modal-header"><h3>🔢 {numpadTarget === 'payment' ? 'จำนวนเงิน' : 'ส่วนลด'}</h3><button className="btn btn-ghost btn-icon" onClick={() => setShowNumpad(false)}>✕</button></div>
+                        <div className="modal-header"><h3>🔢 {numpadTarget === 'payment' ? 'จำนวนเงิน' : (numpadTarget === 'splitCashPart' ? 'ส่วนเงินสด' : 'ส่วนลด')}</h3><button className="btn btn-ghost btn-icon" onClick={() => setShowNumpad(false)}>✕</button></div>
                         <div className="modal-body">
                             <div style={{ textAlign: 'center', fontSize: 'var(--font-size-2xl)', fontWeight: 800, color: 'var(--text-primary)', padding: 'var(--space-md)', background: 'var(--bg-input)', borderRadius: 'var(--radius-md)', marginBottom: 'var(--space-md)', minHeight: '56px' }}>
                                 {numpadValue || '0'}

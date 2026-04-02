@@ -423,8 +423,9 @@ export default function CustomerDisplay() {
                                 </div>
                             )
                         })}
+                    </div>
                 </div>
-                </div>
+            </div>
             </div>
             )}
 
