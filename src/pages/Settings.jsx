@@ -147,6 +147,18 @@ export default function Settings() {
                         <input className="form-control" type="text" value={settings.telegramChatId || ''} onChange={e => setSettings({ ...settings, telegramChatId: e.target.value })} placeholder="เช่น 123456789 หรือ -100123456789 (สำหรับกลุ่ม)" />
                         <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)', marginTop: '4px' }}>รับแจ้งเตือนเมื่อเปิด/ปิดกะ หรือสต็อกเหลือน้อย ผ่านบอท Telegram</div>
                     </div>
+                    <div style={{ marginTop: 'var(--space-lg)', padding: 'var(--space-md)', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
+                        <div style={{ fontSize: 'var(--font-size-sm)', fontWeight: 700, marginBottom: 'var(--space-sm)', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>📲 PromptPay (พร้อมเพย์) <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 400 }}>สำหรับจอลูกค้า</span></div>
+                        <div className="form-group" style={{ marginBottom: 'var(--space-sm)' }}>
+                            <label>เลขพร้อมเพย์ (เบอร์โทร 10 หลัก หรือ เลขบัตรประชาชน 13 หลัก)</label>
+                            <input className="form-control" type="text" value={settings.promptPayId || ''} onChange={e => setSettings({ ...settings, promptPayId: e.target.value.replace(/[^\d-]/g, '') })} placeholder="เช่น 089-123-4567 หรือ 1-2345-67890-12-3" maxLength="17" />
+                        </div>
+                        <div className="form-group" style={{ marginBottom: 0 }}>
+                            <label>ชื่อบัญชีพร้อมเพย์ (แสดงให้ลูกค้ายืนยัน)</label>
+                            <input className="form-control" type="text" value={settings.promptPayName || ''} onChange={e => setSettings({ ...settings, promptPayName: e.target.value })} placeholder="เช่น นายใจดี มีสุข / บจก.ร้านค้าใจดี" />
+                        </div>
+                        <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)', marginTop: '6px' }}>เมื่อลูกค้าชำระเงินแบบ "โอน" หรือ "QR" จะแสดง QR Code พร้อมเพย์ที่จอลูกค้าอัตโนมัติ</div>
+                    </div>
                     <button className="btn btn-primary" onClick={handleSave} style={{ marginTop: 'var(--space-xl)', width: '100%', justifyContent: 'center' }}>✅ บันทึกข้อมูลร้าน</button>
                 </div>
 

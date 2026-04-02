@@ -1,5 +1,5 @@
 import { useState, useEffect, Fragment } from 'react'
-import { getTransactions, formatCurrency, formatDate, exportCSV, calcTxProfit, refundTransaction } from '../lib/storage.js'
+import { getTransactions, formatCurrency, formatDate, exportCSV, calcTxProfit, refundTransaction, getCustomers, getCustomerTier } from '../lib/storage.js'
 import { useToast, useAuth } from '../App.jsx'
 import { isAdmin } from '../lib/permissions.js'
 
@@ -14,6 +14,7 @@ export default function History() {
     const { user } = useAuth()
     const role = user?.role || 'staff'
 
+    const [customerMap, setCustomerMap] = useState({})
     const reload = () => {
         let txs = getTransactions()
         if (!isAdmin(role)) {
@@ -21,6 +22,9 @@ export default function History() {
             txs = txs.filter(t => new Date(t.date).toDateString() === today)
         }
         setTransactions(txs)
+        const cMap = {}
+        getCustomers().forEach(c => { cMap[c.id] = c })
+        setCustomerMap(cMap)
     }
     useEffect(() => { reload() }, [])
 
@@ -146,7 +150,7 @@ export default function History() {
                         <div className="table-empty"><div className="empty-icon">📋</div><p>ไม่พบรายการ</p></div>
                     ) : (
                         <table>
-                            <thead><tr><th>วันที่</th><th>เลขที่</th><th>ประเภท</th><th>รายการ</th><th>จำนวน</th><th>มูลค่า</th><th>กำไร</th><th></th></tr></thead>
+                            <thead><tr><th>วันที่</th><th>เลขที่</th><th>ประเภท</th><th>ลูกค้า</th><th>รายการ</th><th>จำนวน</th><th>มูลค่า</th><th>กำไร</th><th></th></tr></thead>
                             <tbody>
                                 {filtered.map(tx => (
                                     <Fragment key={tx.id}>
@@ -158,6 +162,9 @@ export default function History() {
                                                     {tx.type === 'in' ? '📥 นำเข้า' : tx.type === 'refund' ? '↩️ คืน' : '🛒 ขาย'}
                                                 </span>
                                                 {tx.refunded && <span className="badge badge-danger" style={{ marginLeft: '4px', fontSize: '0.5rem' }}>คืนแล้ว</span>}
+                                            </td>
+                                            <td>
+                                                {(() => { const cust = tx.customerId ? customerMap[tx.customerId] : null; if (!cust) return <span style={{ color: 'var(--text-muted)', fontSize: 'var(--font-size-xs)' }}>ลูกค้าทั่วไป</span>; const t = getCustomerTier(cust); return <span style={{ fontSize: 'var(--font-size-xs)' }}><span style={{ color: t.color }}>{t.emoji}</span> {cust.name}</span> })()}
                                             </td>
                                             <td style={{ color: 'var(--text-primary)' }}>
                                                 {tx.items.length === 1 ? tx.items[0].productName : `${tx.items.length} รายการ`}
@@ -177,7 +184,7 @@ export default function History() {
                                         </tr>
                                         {expanded === tx.id && (
                                             <tr key={tx.id + '-detail'}>
-                                                <td colSpan="8" style={{ padding: 'var(--space-md)', background: 'var(--bg-primary)' }}>
+                                                <td colSpan="9" style={{ padding: 'var(--space-md)', background: 'var(--bg-primary)' }}>
                                                     {tx.items.map((item, i) => (
                                                         <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: i < tx.items.length - 1 ? '1px solid var(--border)' : 'none' }}>
                                                             <span>{item.productName} ×{item.qty}</span>

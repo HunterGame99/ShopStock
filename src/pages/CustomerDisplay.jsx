@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { getStore, SETTINGS_KEY, MEMBERSHIP_TIERS, applyPromotions } from '../lib/storage.js';
+import { generatePromptPayQR } from '../lib/promptpay.js';
 
 export default function CustomerDisplay() {
     const [cart, setCart] = useState([]);
@@ -8,6 +9,7 @@ export default function CustomerDisplay() {
     const [time, setTime] = useState(new Date());
     const [member, setMember] = useState(null);
     const [discounts, setDiscounts] = useState({ member: 0, promo: 0, manual: 0, points: 0 });
+    const [qrPayment, setQrPayment] = useState(null); // { promptPayId, promptPayName, amount }
 
     useEffect(() => {
         try {
@@ -21,10 +23,12 @@ export default function CustomerDisplay() {
         channel.onmessage = (event) => {
             const { type, cart: cartData, details, member: memberData } = event.data;
             if (type === 'CART_UPDATE') { setCart(cartData || []); setPaymentFlow(null); if (event.data.discounts) setDiscounts(event.data.discounts); }
-            else if (type === 'PAYMENT_COMPLETE') { setPaymentFlow(details); setMember(null); }
-            else if (type === 'CLEAR') { setCart([]); setPaymentFlow(null); setMember(null); setDiscounts({ member: 0, promo: 0, manual: 0, points: 0 }); }
+            else if (type === 'PAYMENT_COMPLETE') { setPaymentFlow(details); setMember(null); setQrPayment(null); }
+            else if (type === 'CLEAR') { setCart([]); setPaymentFlow(null); setMember(null); setDiscounts({ member: 0, promo: 0, manual: 0, points: 0 }); setQrPayment(null); }
             else if (type === 'MEMBER_UPDATE') { setMember(memberData); }
             else if (type === 'MEMBER_CLEAR') { setMember(null); }
+            else if (type === 'PAYMENT_QR') { setQrPayment({ promptPayId: event.data.promptPayId, promptPayName: event.data.promptPayName, amount: event.data.amount }); }
+            else if (type === 'PAYMENT_QR_CLEAR') { setQrPayment(null); }
         };
         return () => channel.close();
     }, []);
@@ -345,6 +349,68 @@ export default function CustomerDisplay() {
                 </div>
                 </div>
             </div>
+
+            {/* QR Payment Overlay */}
+            {qrPayment && (
+                <div style={{
+                    position: 'fixed', inset: 0, zIndex: 1000,
+                    background: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%)',
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                    animation: 'fadeIn 0.4s ease-out'
+                }}>
+                    {/* Header */}
+                    <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+                        <div style={{ fontSize: '1rem', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '8px' }}>สแกนเพื่อชำระเงิน</div>
+                        <div style={{ fontSize: '3.5rem', fontWeight: 900, background: 'linear-gradient(135deg, #60a5fa, #818cf8)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', lineHeight: 1 }}>
+                            {qrPayment.amount.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </div>
+                        <div style={{ fontSize: '1.2rem', color: '#64748b', fontWeight: 600, marginTop: '4px' }}>บาท</div>
+                    </div>
+
+                    {/* QR Code Card */}
+                    <div style={{
+                        background: 'white', borderRadius: '24px', padding: '24px',
+                        boxShadow: '0 0 60px rgba(99,102,241,0.3), 0 0 120px rgba(139,92,246,0.15)',
+                        position: 'relative', overflow: 'hidden'
+                    }}>
+                        {/* Shimmer effect */}
+                        <div style={{
+                            position: 'absolute', top: 0, left: '-100%', width: '60%', height: '100%',
+                            background: 'linear-gradient(90deg, transparent, rgba(99,102,241,0.08), transparent)',
+                            animation: 'shimmer 2.5s ease-in-out infinite', pointerEvents: 'none'
+                        }} />
+                        <img
+                            src={generatePromptPayQR(qrPayment.promptPayId, qrPayment.amount, 280)}
+                            alt="PromptPay QR"
+                            style={{ width: '280px', height: '280px', display: 'block' }}
+                        />
+                    </div>
+
+                    {/* Account Name */}
+                    {qrPayment.promptPayName && (
+                        <div style={{
+                            marginTop: '20px', padding: '10px 24px',
+                            background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.25)',
+                            borderRadius: '12px', textAlign: 'center'
+                        }}>
+                            <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '2px' }}>บัญชีพร้อมเพย์</div>
+                            <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#f1f5f9' }}>{qrPayment.promptPayName}</div>
+                        </div>
+                    )}
+
+                    {/* Waiting indicator */}
+                    <div style={{ marginTop: '28px', display: 'flex', alignItems: 'center', gap: '10px', color: '#f59e0b', fontSize: '1.1rem', fontWeight: 600 }}>
+                        <span style={{ animation: 'pulse 1.5s infinite' }}>📲</span>
+                        <span>รอรับการชำระเงิน...</span>
+                        <span style={{ animation: 'pulse 1.5s infinite 0.5s' }}>💳</span>
+                    </div>
+
+                    {/* PromptPay logo */}
+                    <div style={{ marginTop: '20px', fontSize: '0.75rem', color: '#475569', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span>📲</span> PromptPay / พร้อมเพย์
+                    </div>
+                </div>
+            )}
 
             <style>{`
                 @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }

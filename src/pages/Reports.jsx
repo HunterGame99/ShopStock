@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { getProducts, getTransactions, getProfitReport, getTopProducts, getSlowProducts, getReorderSuggestions, predictNextWeekSales, getLast7DaysData, exportData, importData, exportCSV, formatCurrency, formatNumber, fetchCloudDailySummary, getTaxSummary, exportTaxCSV, getSettings, EXPENSE_CATEGORIES } from '../lib/storage.js'
+import { getProducts, getTransactions, getProfitReport, getTopProducts, getSlowProducts, getReorderSuggestions, predictNextWeekSales, getLast7DaysData, exportData, importData, exportCSV, formatCurrency, formatNumber, fetchCloudDailySummary, getTaxSummary, exportTaxCSV, getSettings, EXPENSE_CATEGORIES, getCustomers, getCustomerTier, MEMBERSHIP_TIERS } from '../lib/storage.js'
 import { useToast } from '../App.jsx'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts'
 
@@ -82,6 +82,7 @@ export default function Reports() {
     const tabs = [
         { key: 'profit', label: '💰 กำไร-ขาดทุน' },
         { key: 'ranking', label: '🏆 อันดับสินค้า' },
+        { key: 'members', label: '👥 สมาชิก' },
         { key: 'ai', label: '🧠 AI แนะนำ' },
         { key: 'tax', label: '🏛️ สรุปภาษี' },
         { key: 'cloud', label: '☁️ สรุป Cloud' },
@@ -259,6 +260,144 @@ export default function Reports() {
                     </div>
                 </div>
             )}
+
+            {/* === Members Tab === */}
+            {tab === 'members' && (() => {
+                const customers = getCustomers()
+                const tierStats = MEMBERSHIP_TIERS.map(t => {
+                    const members = customers.filter(c => getCustomerTier(c).key === t.key)
+                    return { ...t, count: members.length, totalSpent: members.reduce((s, c) => s + (c.totalSpent || 0), 0), totalPoints: members.reduce((s, c) => s + (c.points || 0), 0) }
+                })
+                const totalMembers = customers.length
+                const totalSpentAll = customers.reduce((s, c) => s + (c.totalSpent || 0), 0)
+                const totalPointsAll = customers.reduce((s, c) => s + (c.points || 0), 0)
+                const avgSpent = totalMembers > 0 ? totalSpentAll / totalMembers : 0
+                const topBySpent = [...customers].sort((a, b) => (b.totalSpent || 0) - (a.totalSpent || 0)).slice(0, 10)
+                const topByPoints = [...customers].sort((a, b) => (b.points || 0) - (a.points || 0)).slice(0, 10)
+
+                const exportCustomerCSV = () => {
+                    const header = 'ชื่อ,เบอร์โทร,ระดับ,ยอดซื้อสะสม,คะแนน,จำนวนครั้ง,วันที่สมัคร\n'
+                    const rows = customers.map(c => {
+                        const t = getCustomerTier(c)
+                        return `"${c.name}","${c.phone || ''}","${t.label}",${c.totalSpent || 0},${c.points || 0},${c.visitCount || 0},"${c.createdAt ? new Date(c.createdAt).toLocaleDateString('th-TH') : ''}"`
+                    }).join('\n')
+                    const bom = '\uFEFF'
+                    const blob = new Blob([bom + header + rows], { type: 'text/csv;charset=utf-8;' })
+                    const url = URL.createObjectURL(blob)
+                    const a = document.createElement('a')
+                    a.href = url; a.download = `shopstock_members_${new Date().toISOString().split('T')[0]}.csv`; a.click()
+                    URL.revokeObjectURL(url)
+                    toast('ดาวน์โหลด CSV สมาชิกสำเร็จ 📁')
+                }
+
+                return (
+                    <>
+                        {/* Summary Cards */}
+                        <div className="stat-cards" style={{ marginBottom: 'var(--space-lg)' }}>
+                            <div className="stat-card mini"><div className="stat-card-icon blue">👥</div><div className="stat-card-info"><h3>สมาชิกทั้งหมด</h3><div className="stat-value" style={{ fontSize: 'var(--font-size-lg)' }}>{totalMembers} คน</div></div></div>
+                            <div className="stat-card mini"><div className="stat-card-icon green">💰</div><div className="stat-card-info"><h3>ยอดซื้อสะสมรวม</h3><div className="stat-value" style={{ fontSize: 'var(--font-size-lg)' }}>{formatCurrency(totalSpentAll)}</div></div></div>
+                            <div className="stat-card mini"><div className="stat-card-icon orange">🪙</div><div className="stat-card-info"><h3>คะแนนสะสมรวม</h3><div className="stat-value" style={{ fontSize: 'var(--font-size-lg)' }}>{totalPointsAll.toLocaleString()} pt</div></div></div>
+                            <div className="stat-card mini"><div className="stat-card-icon purple">📊</div><div className="stat-card-info"><h3>ค่าเฉลี่ยต่อคน</h3><div className="stat-value" style={{ fontSize: 'var(--font-size-lg)' }}>{formatCurrency(avgSpent)}</div></div></div>
+                        </div>
+
+                        {/* Tier Distribution */}
+                        <div className="dashboard-grid" style={{ marginBottom: 'var(--space-lg)' }}>
+                            <div className="chart-container">
+                                <div className="chart-header"><h3>🏆 สมาชิกตาม Tier</h3><button className="btn btn-secondary btn-sm" onClick={exportCustomerCSV}>📁 Export CSV สมาชิก</button></div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                    {tierStats.map(t => {
+                                        const pct = totalMembers > 0 ? (t.count / totalMembers) * 100 : 0
+                                        return (
+                                            <div key={t.key} style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                                <span style={{ width: '100px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: 'var(--font-size-sm)', fontWeight: 700 }}>
+                                                    <span style={{ fontSize: '1.2rem' }}>{t.emoji}</span>
+                                                    <span style={{ color: t.color }}>{t.label}</span>
+                                                </span>
+                                                <div style={{ flex: 1, height: '24px', background: 'var(--bg-secondary)', borderRadius: '6px', overflow: 'hidden', position: 'relative' }}>
+                                                    <div style={{ height: '100%', background: `linear-gradient(90deg, ${t.color}cc, ${t.color}88)`, width: `${Math.max(pct, 2)}%`, borderRadius: '6px', transition: 'width 0.5s' }} />
+                                                    <span style={{ position: 'absolute', top: '50%', left: '10px', transform: 'translateY(-50%)', fontSize: '11px', fontWeight: 700, color: pct > 20 ? 'white' : 'var(--text-primary)' }}>{t.count} คน ({pct.toFixed(0)}%)</span>
+                                                </div>
+                                                <span style={{ width: '90px', textAlign: 'right', fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)' }}>{formatCurrency(t.totalSpent)}</span>
+                                            </div>
+                                        )
+                                    })}
+                                </div>
+                            </div>
+
+                            <div className="chart-container">
+                                <div className="chart-header"><h3>🪙 คะแนนสะสมตาม Tier</h3></div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                    {tierStats.map(t => {
+                                        const pct = totalPointsAll > 0 ? (t.totalPoints / totalPointsAll) * 100 : 0
+                                        return (
+                                            <div key={t.key} style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                                <span style={{ width: '100px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: 'var(--font-size-sm)', fontWeight: 700 }}>
+                                                    <span style={{ fontSize: '1.2rem' }}>{t.emoji}</span>
+                                                    <span style={{ color: t.color }}>{t.label}</span>
+                                                </span>
+                                                <div style={{ flex: 1, height: '24px', background: 'var(--bg-secondary)', borderRadius: '6px', overflow: 'hidden', position: 'relative' }}>
+                                                    <div style={{ height: '100%', background: `linear-gradient(90deg, ${t.color}cc, ${t.color}88)`, width: `${Math.max(pct, 2)}%`, borderRadius: '6px', transition: 'width 0.5s' }} />
+                                                    <span style={{ position: 'absolute', top: '50%', left: '10px', transform: 'translateY(-50%)', fontSize: '11px', fontWeight: 700, color: pct > 20 ? 'white' : 'var(--text-primary)' }}>{t.totalPoints.toLocaleString()} pt</span>
+                                                </div>
+                                                <span style={{ width: '60px', textAlign: 'right', fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)' }}>{pct.toFixed(0)}%</span>
+                                            </div>
+                                        )
+                                    })}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Top Members Tables */}
+                        <div className="dashboard-grid">
+                            <div className="chart-container">
+                                <div className="chart-header"><h3>💰 Top 10 ยอดซื้อ</h3></div>
+                                {topBySpent.length === 0 ? <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 'var(--space-xl)' }}>ยังไม่มีข้อมูล</div> : (
+                                    <div className="low-stock-list">
+                                        {topBySpent.map((c, i) => {
+                                            const t = getCustomerTier(c)
+                                            return (
+                                                <div key={c.id} className="low-stock-item">
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                        <span style={{ width: '22px', height: '22px', borderRadius: '4px', background: `linear-gradient(135deg, ${t.color}, ${t.color}88)`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 800, color: 'white' }}>{i + 1}</span>
+                                                        <div>
+                                                            <div className="item-name" style={{ fontSize: 'var(--font-size-xs)' }}>{t.emoji} {c.name}</div>
+                                                            <div style={{ fontSize: '10px', color: t.color, fontWeight: 600 }}>{t.label} • {c.visitCount || 0} ครั้ง</div>
+                                                        </div>
+                                                    </div>
+                                                    <span style={{ fontWeight: 800, color: 'var(--accent-primary-hover)', fontSize: 'var(--font-size-xs)' }}>{formatCurrency(c.totalSpent || 0)}</span>
+                                                </div>
+                                            )
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="chart-container">
+                                <div className="chart-header"><h3>🪙 Top 10 คะแนน</h3></div>
+                                {topByPoints.length === 0 ? <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 'var(--space-xl)' }}>ยังไม่มีข้อมูล</div> : (
+                                    <div className="low-stock-list">
+                                        {topByPoints.map((c, i) => {
+                                            const t = getCustomerTier(c)
+                                            return (
+                                                <div key={c.id} className="low-stock-item">
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                        <span style={{ width: '22px', height: '22px', borderRadius: '4px', background: `linear-gradient(135deg, ${t.color}, ${t.color}88)`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 800, color: 'white' }}>{i + 1}</span>
+                                                        <div>
+                                                            <div className="item-name" style={{ fontSize: 'var(--font-size-xs)' }}>{t.emoji} {c.name}</div>
+                                                            <div style={{ fontSize: '10px', color: t.color, fontWeight: 600 }}>{t.label} • ยอดซื้อ {formatCurrency(c.totalSpent || 0)}</div>
+                                                        </div>
+                                                    </div>
+                                                    <span style={{ fontWeight: 800, color: 'var(--accent-primary-hover)', fontSize: 'var(--font-size-xs)' }}>🪙 {(c.points || 0).toLocaleString()} pt</span>
+                                                </div>
+                                            )
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </>
+                )
+            })()}
 
             {/* === AI Tab === */}
             {tab === 'ai' && (

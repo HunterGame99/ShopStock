@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { getProducts, addTransaction, getCustomers, formatCurrency, formatDate, playSound, getTopProducts, getCategoryEmoji, applyPromotions, getPromotions, CATEGORIES, holdBill, getHeldBills, resumeBill, deleteHeldBill, getRecentSales, addCredit, getUnpaidCredits, getSettings, redeemPoints, generateInvoiceNumber, getCustomerTier, getNextTier, getTierDiscount, MEMBERSHIP_TIERS, getRewards, redeemReward, seedDefaultRewards } from '../lib/storage.js'
+import { getProducts, addTransaction, getCustomers, formatCurrency, formatDate, playSound, getTopProducts, getCategoryEmoji, applyPromotions, getPromotions, CATEGORIES, holdBill, getHeldBills, resumeBill, deleteHeldBill, getRecentSales, addCredit, getUnpaidCredits, getSettings, redeemPoints, generateInvoiceNumber, getCustomerTier, getNextTier, getTierDiscount, MEMBERSHIP_TIERS, getRewards, redeemReward, seedDefaultRewards, applyCoupon, useCoupon } from '../lib/storage.js'
 import { useToast, useShift } from '../App.jsx'
 import BarcodeScanner from '../components/BarcodeScanner.jsx'
 import ReceiptPrinter from '../components/ReceiptPrinter.jsx'
@@ -35,6 +35,8 @@ export default function StockOut() {
     const [memberSearch, setMemberSearch] = useState('')
     const [customerSearchText, setCustomerSearchText] = useState('')
     const [showCustomerDropdown, setShowCustomerDropdown] = useState(false)
+    const [couponCode, setCouponCode] = useState('')
+    const [appliedCoupon, setAppliedCoupon] = useState(null) // { coupon, discount }
     const toast = useToast()
 
     const selectedCustomerData = customers.find(c => c.id === selectedCustomer)
@@ -122,7 +124,7 @@ export default function StockOut() {
             }
             if (e.key === 'Escape') {
                 e.preventDefault();
-                if (showCheckout) setShowCheckout(false);
+                if (showCheckout) { setShowCheckout(false); broadcastPaymentQRClear(); }
                 else if (showNumpad) setShowNumpad(false);
                 else if (showHeld) setShowHeld(false);
                 else if (showRecent) setShowRecent(false);
@@ -177,7 +179,8 @@ export default function StockOut() {
 
     const subtotal = cart.reduce((s, c) => s + (c.qty * c.price), 0)
     const memberDiscount = tierDiscount > 0 ? Math.round(subtotal * tierDiscount / 100) : 0
-    const totalDiscount = promoDiscount + pointsUsed + memberDiscount
+    const couponDiscount = appliedCoupon ? appliedCoupon.discount : 0
+    const totalDiscount = promoDiscount + pointsUsed + memberDiscount + couponDiscount
     const cartTotal = Math.max(0, subtotal - totalDiscount)
     const vatAmount = settings.vatEnabled ? (cartTotal * settings.vatRate / (100 + settings.vatRate)) : 0
     const netAmount = cartTotal - vatAmount
@@ -223,6 +226,25 @@ export default function StockOut() {
         reload()
     }
 
+    // Broadcast QR payment info to customer display
+    const broadcastPaymentQR = (method, amount) => {
+        const ch = posChannelRef.current
+        if (!ch) return
+        if (method === 'transfer' || method === 'qr') {
+            const s = getSettings()
+            if (s.promptPayId) {
+                try {
+                    ch.postMessage({ type: 'PAYMENT_QR', promptPayId: s.promptPayId, promptPayName: s.promptPayName || '', amount })
+                } catch (e) { /* channel closed */ }
+            }
+        }
+    }
+    const broadcastPaymentQRClear = () => {
+        const ch = posChannelRef.current
+        if (!ch) return
+        try { ch.postMessage({ type: 'PAYMENT_QR_CLEAR' }) } catch (e) { /* channel closed */ }
+    }
+
     const handleCheckout = () => {
         if (!activeShift) { toast('กรุณาเปิดกะก่อนขายสินค้า', 'error'); navigate('/shifts'); return }
         if (cart.length === 0) { toast('เพิ่มสินค้า', 'error'); return }
@@ -233,12 +255,14 @@ export default function StockOut() {
         }
         setPayment(paymentMethod === 'cash' ? '' : cartTotal.toString())
         setShowCheckout(true)
+        broadcastPaymentQR(paymentMethod, cartTotal)
     }
 
     const proceedCheckoutAsGuest = () => {
         setShowMemberStep(false)
         setPayment(paymentMethod === 'cash' ? '' : cartTotal.toString())
         setShowCheckout(true)
+        broadcastPaymentQR(paymentMethod, cartTotal)
     }
 
     const proceedCheckoutWithMember = (customerId) => {
@@ -246,6 +270,7 @@ export default function StockOut() {
         setShowMemberStep(false)
         setPayment(paymentMethod === 'cash' ? '' : cartTotal.toString())
         setShowCheckout(true)
+        broadcastPaymentQR(paymentMethod, cartTotal)
     }
 
     const confirmCheckout = () => {
@@ -263,9 +288,15 @@ export default function StockOut() {
             redeemPoints(selectedCustomer, pointsUsed)
         }
         playSound('success')
+        broadcastPaymentQRClear()
         setShowReceipt({ ...tx, payment: payAmount, change: paymentMethod === 'cash' ? payAmount - cartTotal : 0 })
-        setShowCheckout(false); setCart([]); setPayment(''); setSelectedCustomer(''); setPointsUsed(0)
-        toast('ขายสำเร็จ! 🎉'); reload()
+        if (appliedCoupon) { useCoupon(appliedCoupon.coupon.id) }
+        setShowCheckout(false); setCart([]); setPayment(''); setSelectedCustomer(''); setPointsUsed(0); setAppliedCoupon(null); setCouponCode('')
+        toast('ขายสำเร็จ! 🎉')
+        if (tx.tierUpgrade) {
+            setTimeout(() => toast(`🏆 ${tx.tierUpgrade.customer.name} อัพเกรดเป็น ${tx.tierUpgrade.newTier.emoji} ${tx.tierUpgrade.newTier.label}!`), 500)
+        }
+        reload()
     }
 
     // Voice search
@@ -569,12 +600,45 @@ export default function StockOut() {
                                 )}
                             </div>
 
+                            {/* Coupon Input */}
+                            <div style={{ padding: '6px var(--space-md)', borderBottom: '1px solid var(--border)' }}>
+                                {appliedCoupon ? (
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--success-bg, rgba(34,197,94,0.1))', padding: '5px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--success)' }}>
+                                        <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--success)' }}>🎫 {appliedCoupon.coupon.code} → -{formatCurrency(appliedCoupon.discount)}</span>
+                                        <button onClick={() => { setAppliedCoupon(null); setCouponCode('') }} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: '11px', padding: '0 2px' }}>✕</button>
+                                    </div>
+                                ) : (
+                                    <div style={{ display: 'flex', gap: '4px' }}>
+                                        <input
+                                            type="text"
+                                            placeholder="🎫 โค้ดคูปอง..."
+                                            value={couponCode}
+                                            onChange={e => setCouponCode(e.target.value.toUpperCase())}
+                                            onKeyDown={e => {
+                                                if (e.key === 'Enter' && couponCode.trim()) {
+                                                    const result = applyCoupon(couponCode.trim(), subtotal)
+                                                    if (result.ok) { setAppliedCoupon({ coupon: result.coupon, discount: result.discount }); toast(`🎫 ใช้คูปอง ${result.coupon.code} ลด ${formatCurrency(result.discount)}`) }
+                                                    else { toast(result.msg, 'error'); setCouponCode('') }
+                                                }
+                                            }}
+                                            style={{ flex: 1, padding: '5px 8px', fontSize: '11px', fontFamily: 'monospace', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)', outline: 'none' }}
+                                        />
+                                        <button className="btn btn-secondary btn-sm" onClick={() => {
+                                            if (!couponCode.trim()) return
+                                            const result = applyCoupon(couponCode.trim(), subtotal)
+                                            if (result.ok) { setAppliedCoupon({ coupon: result.coupon, discount: result.discount }); toast(`🎫 ใช้คูปอง ${result.coupon.code} ลด ${formatCurrency(result.discount)}`) }
+                                            else { toast(result.msg, 'error'); setCouponCode('') }
+                                        }} style={{ fontSize: '10px' }}>ใช้</button>
+                                    </div>
+                                )}
+                            </div>
+
                             {/* Summary */}
                             <div className="cart-summary">
                                 <div className="cart-summary-row"><span>ราคาสินค้า</span><span>{formatCurrency(subtotal)}</span></div>
                                 {memberDiscount > 0 && <div className="cart-summary-row" style={{ color: 'var(--danger)' }}><span>{customerTier?.emoji} สมาชิก {customerTier?.label} ({tierDiscount}%)</span><span>-{formatCurrency(memberDiscount)}</span></div>}
-
                                 {promoDiscount > 0 && <div className="cart-summary-row" style={{ color: 'var(--danger)' }}><span>🏷️ โปรโมชั่น</span><span>-{formatCurrency(promoDiscount)}</span></div>}
+                                {couponDiscount > 0 && <div className="cart-summary-row" style={{ color: 'var(--danger)' }}><span>🎫 คูปอง ({appliedCoupon?.coupon?.code})</span><span>-{formatCurrency(couponDiscount)}</span></div>}
                                 {pointsUsed > 0 && <div className="cart-summary-row" style={{ color: 'var(--danger)' }}><span>🎁 แลกแต้ม ({pointsUsed} คะแนน)</span><span>-{formatCurrency(pointsUsed)}</span></div>}
                                 <div className="cart-summary-row total"><span>ยอดรวม</span><span>{formatCurrency(cartTotal)}</span></div>
                             </div>
@@ -724,9 +788,9 @@ export default function StockOut() {
 
             {/* Checkout Modal */}
             {showCheckout && (
-                <div className="modal-overlay" onClick={() => setShowCheckout(false)}>
+                <div className="modal-overlay" onClick={() => { setShowCheckout(false); broadcastPaymentQRClear() }}>
                     <div className="modal" onClick={e => e.stopPropagation()}>
-                        <div className="modal-header"><h3>💳 ชำระเงิน</h3><button className="btn btn-ghost btn-icon" onClick={() => setShowCheckout(false)}>✕</button></div>
+                        <div className="modal-header"><h3>💳 ชำระเงิน</h3><button className="btn btn-ghost btn-icon" onClick={() => { setShowCheckout(false); broadcastPaymentQRClear() }}>✕</button></div>
                         <div className="modal-body">
                             {/* Customer confirm row */}
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)', marginBottom: 'var(--space-md)', border: selectedCustomerData ? `1px solid ${customerTier?.color}44` : '1px solid var(--border)' }}>
@@ -745,7 +809,7 @@ export default function StockOut() {
                                     </div>
                                 </div>
                                 <button className="btn btn-ghost btn-sm" style={{ fontSize: '10px', color: 'var(--accent-primary)' }}
-                                    onClick={() => { setShowCheckout(false); setSelectedCustomer(''); setMemberSearch(''); setShowMemberStep(true) }}>
+                                    onClick={() => { setShowCheckout(false); broadcastPaymentQRClear(); setSelectedCustomer(''); setMemberSearch(''); setShowMemberStep(true) }}>
                                     🔄 เปลี่ยน
                                 </button>
                             </div>
@@ -769,7 +833,7 @@ export default function StockOut() {
                             ) : <div style={{ textAlign: 'center', padding: 'var(--space-lg)', color: 'var(--text-secondary)' }}><div style={{ fontSize: '3rem', marginBottom: '8px' }}>{paymentMethod === 'transfer' ? '📱' : '📲'}</div><p>กดยืนยันเมื่อได้รับเงินแล้ว</p></div>}
                         </div>
                         <div className="modal-footer">
-                            <button className="btn btn-secondary" onClick={() => setShowCheckout(false)}>ยกเลิก</button>
+                            <button className="btn btn-secondary" onClick={() => { setShowCheckout(false); broadcastPaymentQRClear() }}>ยกเลิก</button>
                             <button className="btn btn-success btn-lg" onClick={confirmCheckout} disabled={paymentMethod === 'cash' && (!payment || Number(payment) < cartTotal)}>✅ ยืนยัน</button>
                         </div>
                     </div>

@@ -323,6 +323,47 @@ export function seedDefaultRewards() {
     DEFAULT_REWARDS.forEach(r => addReward(r))
 }
 
+// ===== Coupons =====
+const COUPONS_KEY = 'shopstock_coupons'
+
+export function getCoupons() { return getStore(COUPONS_KEY) }
+export function saveCoupons(c) { setStore(COUPONS_KEY, c) }
+
+export function addCoupon(coupon) {
+    const coupons = getCoupons()
+    const newCoupon = { id: generateId(), ...coupon, usedCount: 0, active: true, createdAt: new Date().toISOString() }
+    coupons.push(newCoupon)
+    saveCoupons(coupons)
+    return newCoupon
+}
+
+export function deleteCoupon(id) {
+    saveCoupons(getCoupons().filter(c => c.id !== id))
+}
+
+export function toggleCoupon(id) {
+    const coupons = getCoupons()
+    const c = coupons.find(x => x.id === id)
+    if (c) { c.active = !c.active; saveCoupons(coupons) }
+}
+
+export function applyCoupon(code, subtotal) {
+    const coupons = getCoupons()
+    const coupon = coupons.find(c => c.code.toUpperCase() === code.toUpperCase() && c.active)
+    if (!coupon) return { ok: false, msg: 'ไม่พบคูปองนี้' }
+    if (coupon.maxUses > 0 && coupon.usedCount >= coupon.maxUses) return { ok: false, msg: 'คูปองนี้ถูกใช้ครบแล้ว' }
+    if (coupon.minSpend > 0 && subtotal < coupon.minSpend) return { ok: false, msg: `ยอดขั้นต่ำ ฿${coupon.minSpend.toLocaleString()}` }
+    if (coupon.expiresAt && new Date(coupon.expiresAt) < new Date()) return { ok: false, msg: 'คูปองหมดอายุแล้ว' }
+    const discount = coupon.type === 'percent' ? Math.round(subtotal * coupon.value / 100) : coupon.value
+    return { ok: true, discount: Math.min(discount, subtotal), coupon }
+}
+
+export function useCoupon(couponId) {
+    const coupons = getCoupons()
+    const c = coupons.find(x => x.id === couponId)
+    if (c) { c.usedCount = (c.usedCount || 0) + 1; saveCoupons(coupons) }
+}
+
 // ===== Transactions CRUD =====
 export function getTransactions() { return getStore(TRANSACTIONS_KEY) }
 export function saveTransactions(txs) { setStore(TRANSACTIONS_KEY, txs) }
@@ -360,11 +401,12 @@ export function addTransaction(tx) {
     saveProducts(products)
 
     // Update customer stats & points (use tier-based point rate)
+    let tierUpgrade = null
     if (newTx.customerId && newTx.type === 'out') {
         const customer = getCustomers().find(c => c.id === newTx.customerId)
         if (customer) {
-            const tier = getCustomerTier(customer)
-            const pointRate = tier.pointRate || 25
+            const oldTier = getCustomerTier(customer)
+            const pointRate = oldTier.pointRate || 25
             const newSpent = (customer.totalSpent || 0) + newTx.total
             const earnedPoints = Math.floor(newTx.total / pointRate)
             updateCustomer(customer.id, {
@@ -372,6 +414,11 @@ export function addTransaction(tx) {
                 visitCount: (customer.visitCount || 0) + 1,
                 points: (customer.points || 0) + earnedPoints,
             })
+            const newTier = getCustomerTier({ ...customer, totalSpent: newSpent })
+            if (newTier.key !== oldTier.key) {
+                tierUpgrade = { customer, oldTier, newTier, newSpent }
+                sendTelegramNotify(`🏆 [อัพเกรดสมาชิก]\n"${customer.name}" อัพจาก ${oldTier.emoji} ${oldTier.label} → ${newTier.emoji} ${newTier.label}\nยอดสะสม: ฿${newSpent.toLocaleString()}${newTier.discount > 0 ? `\nสิทธิ์ใหม่: ส่วนลด ${newTier.discount}%` : ''}`)
+            }
         }
     }
 
@@ -395,6 +442,7 @@ export function addTransaction(tx) {
         }
     }
 
+    newTx.tierUpgrade = tierUpgrade
     return newTx
 }
 

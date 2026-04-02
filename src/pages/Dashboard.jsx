@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { getProducts, getTransactions, getTodaySales, getLowStockProducts, getTotalStockValue, getTotalRetailValue, formatCurrency, formatNumber, formatDate, getTodayRevenue, getTodayProfit, getTodayExpenses, getRevenueTrend, getTopProducts, getSlowProducts, getLast7DaysData, getTodayTarget, setDailyTarget, getWeekComparison, getExpiringProducts, getNotifications } from '../lib/storage.js'
+import { getProducts, getTransactions, getTodaySales, getLowStockProducts, getTotalStockValue, getTotalRetailValue, formatCurrency, formatNumber, formatDate, getTodayRevenue, getTodayProfit, getTodayExpenses, getRevenueTrend, getTopProducts, getSlowProducts, getLast7DaysData, getTodayTarget, setDailyTarget, getWeekComparison, getExpiringProducts, getNotifications, getCustomers, getCustomerTier } from '../lib/storage.js'
 import { useToast, useAuth } from '../App.jsx'
 import { canSeeProfit, canAccessPage } from '../lib/permissions.js'
 import { Link } from 'react-router-dom'
@@ -32,8 +32,18 @@ export default function Dashboard() {
         const expiring = getExpiringProducts(7)
         const notifs = getNotifications()
         const recentActivity = getTransactions().slice(0, 8)
+        const topMembers = getCustomers().sort((a, b) => (b.totalSpent || 0) - (a.totalSpent || 0)).slice(0, 5)
+        const hourlyData = (() => {
+            const hours = Array.from({ length: 24 }, (_, i) => ({ hour: `${i.toString().padStart(2, '0')}:00`, revenue: 0, count: 0 }))
+            getTodaySales().forEach(tx => {
+                const h = new Date(tx.createdAt).getHours()
+                hours[h].revenue += tx.total
+                hours[h].count++
+            })
+            return hours.filter(h => h.revenue > 0 || h.count > 0)
+        })()
 
-        setData({ products, todaySales, todayRevenue, todayProfit, todayExpenses, trend, lowStock, stockValue, retailValue, topProducts, slowProducts, last7Days, totalItems, target, weekComp, expiring, notifs, recentActivity })
+        setData({ products, todaySales, todayRevenue, todayProfit, todayExpenses, trend, lowStock, stockValue, retailValue, topProducts, slowProducts, last7Days, totalItems, target, weekComp, expiring, notifs, recentActivity, topMembers, hourlyData })
     }
 
     useEffect(() => {
@@ -309,6 +319,56 @@ export default function Dashboard() {
                             {data.expiring.map((p, i) => (
                                 <div key={i} className="low-stock-item"><div className="item-name">{p.emoji} {p.name}</div><span className="badge badge-danger">หมดอายุ {new Date(p.expDate).toLocaleDateString('th-TH')}</span></div>
                             ))}
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* Top Members + Hourly Sales */}
+            <div className="dashboard-grid" style={{ marginTop: 'var(--space-lg)' }}>
+                <div className="chart-container">
+                    <div className="chart-header"><h3>👑 สมาชิก Top 5</h3><Link to="/customers" className="badge badge-purple" style={{ textDecoration: 'none' }}>ดูทั้งหมด →</Link></div>
+                    {data.topMembers.length === 0 ? <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 'var(--space-xl)' }}><div style={{ fontSize: '2rem', marginBottom: '8px' }}>👥</div>ยังไม่มีสมาชิก</div> : (
+                        <div className="low-stock-list">
+                            {data.topMembers.map((c, i) => {
+                                const tier = getCustomerTier(c)
+                                return (
+                                    <div key={c.id} className="low-stock-item">
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
+                                            <span style={{ width: '28px', height: '28px', borderRadius: 'var(--radius-sm)', background: `linear-gradient(135deg, ${tier.color}, ${tier.color}88)`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 'var(--font-size-xs)', fontWeight: 800, color: 'white' }}>{i + 1}</span>
+                                            <div>
+                                                <div className="item-name">{tier.emoji} {c.name}</div>
+                                                <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)' }}>
+                                                    <span style={{ color: tier.color, fontWeight: 700 }}>{tier.label}</span> • 🪙 {(c.points || 0).toLocaleString()} pt • {c.visitCount || 0} ครั้ง
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <span style={{ fontWeight: 800, color: 'var(--accent-primary-hover)', whiteSpace: 'nowrap' }}>{formatCurrency(c.totalSpent || 0)}</span>
+                                    </div>
+                                )
+                            })}
+                        </div>
+                    )}
+                </div>
+
+                <div className="chart-container">
+                    <div className="chart-header"><h3>⏰ ยอดขายรายชั่วโมง</h3><span className="badge badge-info">วันนี้</span></div>
+                    {data.hourlyData.length === 0 ? <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 'var(--space-xl)' }}><div style={{ fontSize: '2rem', marginBottom: '8px' }}>📊</div>ยังไม่มียอดขายวันนี้</div> : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            {data.hourlyData.map(h => {
+                                const maxRev = Math.max(...data.hourlyData.map(x => x.revenue))
+                                const pct = maxRev > 0 ? (h.revenue / maxRev) * 100 : 0
+                                return (
+                                    <div key={h.hour} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--font-size-sm)' }}>
+                                        <span style={{ width: '42px', textAlign: 'right', color: 'var(--text-muted)', fontSize: 'var(--font-size-xs)', fontWeight: 600, flexShrink: 0 }}>{h.hour}</span>
+                                        <div style={{ flex: 1, height: '18px', background: 'var(--bg-secondary)', borderRadius: '4px', overflow: 'hidden' }}>
+                                            <div style={{ height: '100%', background: 'linear-gradient(90deg, var(--accent-primary), var(--accent-primary-hover))', borderRadius: '4px', width: `${pct}%`, transition: 'width 0.5s' }} />
+                                        </div>
+                                        <span style={{ width: '70px', textAlign: 'right', fontWeight: 700, color: 'var(--text-primary)', fontSize: 'var(--font-size-xs)', flexShrink: 0 }}>{formatCurrency(h.revenue)}</span>
+                                        <span style={{ width: '32px', textAlign: 'right', color: 'var(--text-muted)', fontSize: '10px', flexShrink: 0 }}>{h.count}x</span>
+                                    </div>
+                                )
+                            })}
                         </div>
                     )}
                 </div>
