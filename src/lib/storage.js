@@ -853,8 +853,18 @@ export function getProfitReport(days = 30) {
     const since = new Date(); since.setDate(since.getDate() - days)
     const txs = getTransactions().filter(tx => new Date(tx.createdAt) >= since)
     const products = getProducts()
-    const revenue = txs.filter(tx => tx.type === 'out').reduce((s, tx) => s + tx.total, 0)
-    const cost = txs.filter(tx => tx.type === 'out').reduce((s, tx) => s + tx.items.reduce((c, i) => {
+    const outTxs = txs.filter(tx => tx.type === 'out')
+    
+    const revenueByMethod = { cash: 0, transfer: 0, qr: 0 }
+    outTxs.forEach(tx => {
+        if (tx.paymentMethod === 'cash') revenueByMethod.cash += tx.total
+        else if (tx.paymentMethod === 'transfer') revenueByMethod.transfer += tx.total
+        else if (tx.paymentMethod === 'qr') revenueByMethod.qr += tx.total
+        else revenueByMethod.cash += tx.total // Default fallback
+    })
+
+    const revenue = outTxs.reduce((s, tx) => s + tx.total, 0)
+    const cost = outTxs.reduce((s, tx) => s + tx.items.reduce((c, i) => {
         const p = products.find(pr => pr.id === i.productId); return c + (p?.costPrice || 0) * i.qty
     }, 0), 0)
     const stockIn = txs.filter(tx => tx.type === 'in').reduce((s, tx) => s + tx.total, 0)
@@ -863,10 +873,11 @@ export function getProfitReport(days = 30) {
     const netProfit = grossProfit - expenses
     return {
         revenue, costOfGoods: cost, grossProfit, expenses, netProfit,
-        transactionCount: txs.filter(tx => tx.type === 'out').length,
+        transactionCount: outTxs.length,
         margin: revenue > 0 ? (grossProfit / revenue) * 100 : 0,
         netMargin: revenue > 0 ? (netProfit / revenue) * 100 : 0,
-        stockInvestment: stockIn
+        stockInvestment: stockIn,
+        revenueByMethod
     }
 }
 
@@ -1113,7 +1124,7 @@ export function importCSVProducts(csvString) {
         return { success: false, msg: err.message }
     }
 }
-// ===== Sound Effects =====
+// ===== Sound Effects & Voice =====
 export function playSound(type = 'scan') {
     try {
         const ctx = new (window.AudioContext || window.webkitAudioContext)()
@@ -1123,6 +1134,30 @@ export function playSound(type = 'scan') {
         else if (type === 'success') { osc.frequency.value = 800; osc.type = 'sine'; osc.start(); setTimeout(() => osc.frequency.value = 1000, 100); setTimeout(() => osc.frequency.value = 1200, 200); osc.stop(ctx.currentTime + 0.35) }
         else if (type === 'error') { osc.frequency.value = 300; osc.type = 'square'; gain.gain.value = 0.05; osc.start(); osc.stop(ctx.currentTime + 0.3) }
     } catch { }
+}
+
+export function speak(text) {
+    try {
+        const settings = getSettings()
+        if (!settings.enableVoice) return
+        
+        // Stop any currently playing speech
+        window.speechSynthesis.cancel()
+        
+        const utterance = new SpeechSynthesisUtterance(text)
+        utterance.lang = 'th-TH'
+        utterance.rate = 1.0 // Normal speed
+        utterance.pitch = 1.0
+        
+        // Try to find a nice Thai voice if available
+        const voices = window.speechSynthesis.getVoices()
+        const thaiVoice = voices.find(v => v.lang.includes('th') || v.lang.includes('TH'))
+        if (thaiVoice) utterance.voice = thaiVoice
+        
+        window.speechSynthesis.speak(utterance)
+    } catch (err) {
+        console.error("Speech synthesis failed:", err)
+    }
 }
 
 // ===== Notifications =====

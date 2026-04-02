@@ -167,6 +167,27 @@ export default function Reports() {
                         </div>
                     </div>
 
+                    {/* Payment methods breakdown */}
+                    {profitData.revenueByMethod && (
+                    <div className="chart-container" style={{ marginTop: 'var(--space-md)', padding: 'var(--space-md)' }}>
+                        <div style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600, marginBottom: 'var(--space-sm)' }}>💳 สรุปยอดตามช่องทางชำระเงิน</div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 'var(--space-md)' }}>
+                            <div style={{ padding: 'var(--space-sm)', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)' }}>
+                                <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)' }}>💵 เงินสด</div>
+                                <div style={{ fontSize: 'var(--font-size-lg)', fontWeight: 700, color: 'var(--success)' }}>{formatCurrency(profitData.revenueByMethod.cash)}</div>
+                            </div>
+                            <div style={{ padding: 'var(--space-sm)', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)' }}>
+                                <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)' }}>📱 โอนเงิน (Transfer)</div>
+                                <div style={{ fontSize: 'var(--font-size-lg)', fontWeight: 700, color: 'var(--accent-primary-hover)' }}>{formatCurrency(profitData.revenueByMethod.transfer)}</div>
+                            </div>
+                            <div style={{ padding: 'var(--space-sm)', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)' }}>
+                                <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)' }}>🏷️ จ่ายผ่าน QR</div>
+                                <div style={{ fontSize: 'var(--font-size-lg)', fontWeight: 700, color: '#f59e0b' }}>{formatCurrency(profitData.revenueByMethod.qr)}</div>
+                            </div>
+                        </div>
+                    </div>
+                    )}
+
                     {/* Profit chart */}
                     <div className="chart-container" style={{ marginTop: 'var(--space-lg)' }}>
                         <div className="chart-header"><h3>📊 กำไรรายวัน (7 วันย้อนหลัง)</h3></div>

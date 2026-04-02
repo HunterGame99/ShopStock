@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { getStore, SETTINGS_KEY, MEMBERSHIP_TIERS, applyPromotions } from '../lib/storage.js';
+import { getStore, SETTINGS_KEY, MEMBERSHIP_TIERS, applyPromotions, playSound, speak } from '../lib/storage.js';
 import { generatePromptPayQR } from '../lib/promptpay.js';
 
 export default function CustomerDisplay() {
@@ -9,7 +9,8 @@ export default function CustomerDisplay() {
     const [time, setTime] = useState(new Date());
     const [member, setMember] = useState(null);
     const [discounts, setDiscounts] = useState({ member: 0, promo: 0, manual: 0, points: 0 });
-    const [qrPayment, setQrPayment] = useState(null); // { promptPayId, promptPayName, amount }
+    const [qrPayment, setQrPayment] = useState(null); // { promptPayId, promptPayName, amount, cart }
+    const [qrTimer, setQrTimer] = useState(0);
 
     useEffect(() => {
         try {
@@ -23,12 +24,20 @@ export default function CustomerDisplay() {
         channel.onmessage = (event) => {
             const { type, cart: cartData, details, member: memberData } = event.data;
             if (type === 'CART_UPDATE') { setCart(cartData || []); setPaymentFlow(null); if (event.data.discounts) setDiscounts(event.data.discounts); }
-            else if (type === 'PAYMENT_COMPLETE') { setPaymentFlow(details); setMember(null); setQrPayment(null); }
+            else if (type === 'PAYMENT_COMPLETE') { 
+                setPaymentFlow(details); setMember(null); setQrPayment(null); 
+                speak(`ขอบคุณค่ะ โอกาสหน้าเชิญใหม่ค่ะ`);
+            }
             else if (type === 'CLEAR') { setCart([]); setPaymentFlow(null); setMember(null); setDiscounts({ member: 0, promo: 0, manual: 0, points: 0 }); setQrPayment(null); }
             else if (type === 'MEMBER_UPDATE') { setMember(memberData); }
             else if (type === 'MEMBER_CLEAR') { setMember(null); }
-            else if (type === 'PAYMENT_QR') { setQrPayment({ promptPayId: event.data.promptPayId, promptPayName: event.data.promptPayName, amount: event.data.amount }); }
-            else if (type === 'PAYMENT_QR_CLEAR') { setQrPayment(null); }
+            else if (type === 'PAYMENT_QR') { 
+                setQrPayment({ promptPayId: event.data.promptPayId, promptPayName: event.data.promptPayName, amount: event.data.amount, cart: event.data.cart });
+                setQrTimer(0);
+                playSound('success'); 
+                speak(`ยอดชำระทั้งหมด ${event.data.amount} บาท ลูกค้าสามารถสแกนคิวอาร์โค้ดหน้าจอได้เลยค่ะ`);
+            }
+            else if (type === 'PAYMENT_QR_CLEAR') { setQrPayment(null); setQrTimer(0); }
         };
         return () => channel.close();
     }, []);
@@ -44,6 +53,65 @@ export default function CustomerDisplay() {
         const t = setInterval(() => setTime(new Date()), 1000);
         return () => clearInterval(t);
     }, []);
+
+    // Ad Banner Rotation
+    const [currentAdIndex, setCurrentAdIndex] = useState(0);
+    const [adBanners, setAdBanners] = useState([]);
+    useEffect(() => {
+        try {
+            const settings = getStore(SETTINGS_KEY);
+            if (settings && settings.adBanners) {
+                const banners = settings.adBanners.split(',').map(s => s.trim()).filter(s => s);
+                setAdBanners(banners);
+            }
+        } catch (e) { /* ignore */ }
+    }, []);
+
+    useEffect(() => {
+        if (adBanners.length === 0 || cart.length > 0 || qrPayment) return;
+        const interval = setInterval(() => {
+            setCurrentAdIndex(prev => (prev + 1) % adBanners.length);
+        }, 5000); // rotate every 5 seconds
+        return () => clearInterval(interval);
+    }, [adBanners.length, cart.length, qrPayment]);
+
+    // QR Timer Logic (Countdown or Count up)
+    const [qrTimeoutLimit, setQrTimeoutLimit] = useState(0);
+    useEffect(() => {
+        try { const s = getStore(SETTINGS_KEY); setQrTimeoutLimit(Number(s?.qrTimeout) || 0); } catch(e){}
+    }, []);
+
+    useEffect(() => {
+        let interval;
+        if (qrPayment) {
+            interval = setInterval(() => {
+                setQrTimer(prev => {
+                    const newTime = prev + 1;
+                    if (qrTimeoutLimit > 0 && newTime >= qrTimeoutLimit) {
+                        speak('หมดเวลาทำรายการ กรุณาติดต่อพนักงานค่ะ');
+                        window.speechSynthesis?.cancel(); // in case it was speaking
+                        const channel = new BroadcastChannel('shopstock_pos_channel');
+                        channel.postMessage({ type: 'QR_TIMEOUT' });
+                        channel.close();
+                        setQrPayment(null);
+                        return 0;
+                    }
+                    return newTime;
+                });
+            }, 1000);
+        } else {
+            setQrTimer(0);
+        }
+        return () => clearInterval(interval);
+    }, [qrPayment, qrTimeoutLimit]);
+
+    const formatTimer = (secs) => {
+        if (qrTimeoutLimit > 0) {
+            const left = Math.max(0, qrTimeoutLimit - secs);
+            return `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
+        }
+        return `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
+    };
 
     const subtotal = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
     const totalQty = cart.reduce((sum, item) => sum + item.qty, 0);
@@ -76,9 +144,19 @@ export default function CustomerDisplay() {
                 </div>
             </header>
 
-            {/* Main */}
+            {/* Main Area */}
+            {adBanners.length > 0 && cart.length === 0 && !qrPayment && !paymentFlow ? (
+                <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+                    {adBanners.map((url, idx) => (
+                        <div key={idx} style={{
+                            position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+                            opacity: currentAdIndex === idx ? 1 : 0, transition: 'opacity 1.5s ease-in-out',
+                            backgroundSize: 'cover', backgroundPosition: 'center', backgroundImage: `url(${url})`
+                        }} />
+                    ))}
+                </div>
+            ) : (
             <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-
                 {/* Left: Cart */}
                 <div style={{ flex: 5, display: 'flex', flexDirection: 'column', borderRight: '1px solid #1e293b' }}>
                     {/* Cart Header */}
@@ -345,69 +423,95 @@ export default function CustomerDisplay() {
                                 </div>
                             )
                         })}
-                    </div>
                 </div>
                 </div>
             </div>
+            )}
 
             {/* QR Payment Overlay */}
             {qrPayment && (
                 <div style={{
                     position: 'fixed', inset: 0, zIndex: 1000,
                     background: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%)',
-                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                    animation: 'fadeIn 0.4s ease-out'
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '40px',
+                    animation: 'fadeIn 0.4s ease-out', padding: '40px'
                 }}>
-                    {/* Header */}
-                    <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-                        <div style={{ fontSize: '1rem', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '8px' }}>สแกนเพื่อชำระเงิน</div>
-                        <div style={{ fontSize: '3.5rem', fontWeight: 900, background: 'linear-gradient(135deg, #60a5fa, #818cf8)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', lineHeight: 1 }}>
-                            {qrPayment.amount.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </div>
-                        <div style={{ fontSize: '1.2rem', color: '#64748b', fontWeight: 600, marginTop: '4px' }}>บาท</div>
-                    </div>
-
-                    {/* QR Code Card */}
-                    <div style={{
-                        background: 'white', borderRadius: '24px', padding: '24px',
-                        boxShadow: '0 0 60px rgba(99,102,241,0.3), 0 0 120px rgba(139,92,246,0.15)',
-                        position: 'relative', overflow: 'hidden'
-                    }}>
-                        {/* Shimmer effect */}
-                        <div style={{
-                            position: 'absolute', top: 0, left: '-100%', width: '60%', height: '100%',
-                            background: 'linear-gradient(90deg, transparent, rgba(99,102,241,0.08), transparent)',
-                            animation: 'shimmer 2.5s ease-in-out infinite', pointerEvents: 'none'
-                        }} />
-                        <img
-                            src={generatePromptPayQR(qrPayment.promptPayId, qrPayment.amount, 280)}
-                            alt="PromptPay QR"
-                            style={{ width: '280px', height: '280px', display: 'block' }}
-                        />
-                    </div>
-
-                    {/* Account Name */}
-                    {qrPayment.promptPayName && (
-                        <div style={{
-                            marginTop: '20px', padding: '10px 24px',
-                            background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.25)',
-                            borderRadius: '12px', textAlign: 'center'
+                    
+                    {/* Left: Cart details (only if available) */}
+                    {qrPayment.cart && qrPayment.cart.length > 0 && (
+                        <div style={{ 
+                            background: 'rgba(30, 41, 59, 0.8)', borderRadius: '24px', padding: '24px', 
+                            width: '380px', maxHeight: '80vh', display: 'flex', flexDirection: 'column', 
+                            border: '1px solid rgba(255,255,255,0.1)', backdropFilter: 'blur(10px)',
+                            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
                         }}>
-                            <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '2px' }}>บัญชีพร้อมเพย์</div>
-                            <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#f1f5f9' }}>{qrPayment.promptPayName}</div>
+                            <div style={{ fontSize: '1.2rem', fontWeight: 700, color: '#f8fafc', marginBottom: '16px', display: 'flex', justifyContent: 'space-between' }}>
+                                <span>🛒 สรุปรายการ</span>
+                                <span>{qrPayment.cart.reduce((s, c) => s + c.qty, 0)} ชิ้น</span>
+                            </div>
+                            <div style={{ flex: 1, overflowY: 'auto', paddingRight: '8px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                {qrPayment.cart.map(item => (
+                                    <div key={item.productId} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <div style={{ flex: 1, color: '#e2e8f0', fontSize: '1.1rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', paddingRight: '12px' }}>
+                                            {item.productName}
+                                        </div>
+                                        <div style={{ textAlign: 'right' }}>
+                                            <div style={{ color: '#94a3b8', fontSize: '0.9rem' }}>x{item.qty}</div>
+                                            <div style={{ color: '#f8fafc', fontWeight: 600, fontSize: '1.1rem' }}>฿{(item.price * item.qty).toLocaleString()}</div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                            <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px dashed rgba(255,255,255,0.2)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                                <div style={{ color: '#94a3b8', fontSize: '1rem' }}>ยอดรวมสุทธิ</div>
+                                <div style={{ color: '#4ade80', fontSize: '1.8rem', fontWeight: 800 }}>฿{qrPayment.amount.toLocaleString()}</div>
+                            </div>
                         </div>
                     )}
 
-                    {/* Waiting indicator */}
-                    <div style={{ marginTop: '28px', display: 'flex', alignItems: 'center', gap: '10px', color: '#f59e0b', fontSize: '1.1rem', fontWeight: 600 }}>
-                        <span style={{ animation: 'pulse 1.5s infinite' }}>📲</span>
-                        <span>รอรับการชำระเงิน...</span>
-                        <span style={{ animation: 'pulse 1.5s infinite 0.5s' }}>💳</span>
-                    </div>
+                    {/* Right: QR Code */}
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                        <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+                            <div style={{ fontSize: '1rem', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '8px' }}>สแกนเพื่อชำระเงิน</div>
+                            <div style={{ fontSize: '3.5rem', fontWeight: 900, background: 'linea-gradient(135deg, #60a5fa, #818cf8)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', lineHeight: 1 }}>
+                                {qrPayment.amount.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </div>
+                            <div style={{ fontSize: '1.2rem', color: '#64748b', fontWeight: 600, marginTop: '4px' }}>บาท</div>
+                        </div>
 
-                    {/* PromptPay logo */}
-                    <div style={{ marginTop: '20px', fontSize: '0.75rem', color: '#475569', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <span>📲</span> PromptPay / พร้อมเพย์
+                        <div style={{
+                            background: 'white', borderRadius: '24px', padding: '24px',
+                            boxShadow: '0 0 60px rgba(99,102,241,0.3), 0 0 120px rgba(139,92,246,0.15)',
+                            position: 'relative', overflow: 'hidden'
+                        }}>
+                            <div style={{
+                                position: 'absolute', top: 0, left: '-100%', width: '60%', height: '100%',
+                                background: 'linear-gradient(90deg, transparent, rgba(99,102,241,0.08), transparent)',
+                                animation: 'shimmer 2.5s ease-in-out infinite', pointerEvents: 'none'
+                            }} />
+                            <img
+                                src={generatePromptPayQR(qrPayment.promptPayId, qrPayment.amount, 280)}
+                                alt="PromptPay QR"
+                                style={{ width: '280px', height: '280px', display: 'block' }}
+                            />
+                        </div>
+
+                        {qrPayment.promptPayName && (
+                            <div style={{
+                                marginTop: '20px', padding: '10px 24px',
+                                background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.25)',
+                                borderRadius: '12px', textAlign: 'center'
+                            }}>
+                                <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '2px' }}>บัญชีพร้อมเพย์</div>
+                                <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#f1f5f9' }}>{qrPayment.promptPayName}</div>
+                            </div>
+                        )}
+
+                        <div style={{ marginTop: '28px', display: 'flex', alignItems: 'center', gap: '10px', color: '#f59e0b', fontSize: '1.1rem', fontWeight: 600 }}>
+                            <span style={{ animation: 'pulse 1.5s infinite' }}>📲</span>
+                            <span>รอรับการชำระเงิน...</span>
+                            <span style={{ color: '#94a3b8', marginLeft: '4px', fontWeight: 500, fontFamily: 'monospace' }}>({formatTimer(qrTimer)})</span>
+                        </div>
                     </div>
                 </div>
             )}

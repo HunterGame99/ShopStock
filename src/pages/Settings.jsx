@@ -159,6 +159,39 @@ export default function Settings() {
                         </div>
                         <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)', marginTop: '6px' }}>เมื่อลูกค้าชำระเงินแบบ "โอน" หรือ "QR" จะแสดง QR Code พร้อมเพย์ที่จอลูกค้าอัตโนมัติ</div>
                     </div>
+                    <div style={{ marginTop: 'var(--space-md)', padding: 'var(--space-md)', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
+                        <div style={{ fontSize: 'var(--font-size-sm)', fontWeight: 700, marginBottom: 'var(--space-sm)', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>📩 LINE Notify <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 400 }}>แจ้งเตือนยอดขาย</span></div>
+                        <div className="form-group" style={{ marginBottom: 0 }}>
+                            <label>LINE Notify Token</label>
+                            <input className="form-control" type="password" value={settings.lineNotifyToken || ''} onChange={e => setSettings({ ...settings, lineNotifyToken: e.target.value })} placeholder="ใส่ Token ที่ได้จาก LINE Notify" />
+                        </div>
+                        <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)', marginTop: '6px' }}>ระบบจะส่งข้อความเข้า LINE เมื่อมีการขายสำเร็จ</div>
+                    </div>
+                    
+                    {/* New Core Features */}
+                    <div style={{ marginTop: 'var(--space-md)', padding: 'var(--space-md)', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
+                        <div style={{ fontSize: 'var(--font-size-sm)', fontWeight: 700, marginBottom: 'var(--space-sm)', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>✨ ฟีเจอร์ขั้นสูง (อัปเกรด)</div>
+                        
+                        <div className="form-group" style={{ marginBottom: 'var(--space-md)' }}>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                                <input type="checkbox" checked={!!settings.enableVoice} onChange={e => setSettings({ ...settings, enableVoice: e.target.checked })} style={{ width: '18px', height: '18px' }} />
+                                🗣️ เปิดใช้งานระบบเสียงพูดแจ้งยอด
+                            </label>
+                            <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)', marginTop: '4px', marginLeft: '26px' }}>จอลูกค้าจะพูดแจ้งยอดชำระอัตโนมัติเมื่อกดจ่ายด้วย QR</div>
+                        </div>
+
+                        <div className="form-group" style={{ marginBottom: 'var(--space-md)' }}>
+                            <label>📺 ลิงก์รูปภาพโฆษณา (คั่นด้วยลูกน้ำ ,)</label>
+                            <textarea className="form-control" value={settings.adBanners || ''} onChange={e => setSettings({ ...settings, adBanners: e.target.value })} placeholder="https://...image1.jpg, https://...image2.png" rows="2" />
+                            <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)', marginTop: '4px' }}>ถ้าตั้งค่าไว้ รูปภาพเหล่านี้จะสไลด์แสดงบนหน้าจอ Customer Display ตอนพักหน้าจอ</div>
+                        </div>
+
+                        <div className="form-group" style={{ marginBottom: 0 }}>
+                            <label>⏳ หมดเวลา QR รับชำระ (วินาที)</label>
+                            <input className="form-control" type="number" value={settings.qrTimeout || ''} onChange={e => setSettings({ ...settings, qrTimeout: parseInt(e.target.value) || 0 })} placeholder="ตัวอย่าง: 180 (หมายถึง 3 นาที)" />
+                            <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)', marginTop: '4px' }}>ถ้าระบุเวลา เช่น 180 คิวอาร์โค้ดจะนับถอยหลังแทนจับเวลาธรรมดา (ใส่ 0 เพื่อไม่จำกัดเวลา)</div>
+                        </div>
+                    </div>
                     <button className="btn btn-primary" onClick={handleSave} style={{ marginTop: 'var(--space-xl)', width: '100%', justifyContent: 'center' }}>✅ บันทึกข้อมูลร้าน</button>
                 </div>
 

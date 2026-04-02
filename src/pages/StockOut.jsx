@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { getProducts, addTransaction, getCustomers, formatCurrency, formatDate, playSound, getTopProducts, getCategoryEmoji, applyPromotions, getPromotions, CATEGORIES, holdBill, getHeldBills, resumeBill, deleteHeldBill, getRecentSales, addCredit, getUnpaidCredits, getSettings, redeemPoints, generateInvoiceNumber, getCustomerTier, getNextTier, getTierDiscount, MEMBERSHIP_TIERS, getRewards, redeemReward, seedDefaultRewards, applyCoupon, useCoupon } from '../lib/storage.js'
 import { useToast, useShift } from '../App.jsx'
 import { verifyPaymentSlip, isAIAvailable } from '../lib/aiService.js'
+import { sendLineNotify } from '../lib/lineNotify.js'
 import BarcodeScanner from '../components/BarcodeScanner.jsx'
 import ReceiptPrinter from '../components/ReceiptPrinter.jsx'
 import { Link, useNavigate } from 'react-router-dom'
@@ -239,7 +240,7 @@ export default function StockOut() {
             const s = getSettings()
             if (s.promptPayId) {
                 try {
-                    ch.postMessage({ type: 'PAYMENT_QR', promptPayId: s.promptPayId, promptPayName: s.promptPayName || '', amount })
+                    ch.postMessage({ type: 'PAYMENT_QR', promptPayId: s.promptPayId, promptPayName: s.promptPayName || '', amount, cart })
                 } catch (e) { /* channel closed */ }
             }
         }
@@ -300,6 +301,16 @@ export default function StockOut() {
         if (appliedCoupon) { useCoupon(appliedCoupon.coupon.id) }
         setShowCheckout(false); setCart([]); setPayment(''); setSelectedCustomer(''); setPointsUsed(0); setAppliedCoupon(null); setCouponCode('')
         toast('ขายสำเร็จ! 🎉')
+
+        // Send LINE Notify if configured
+        const s = getSettings()
+        if (s.lineNotifyToken) {
+            const methodEmoji = paymentMethod === 'cash' ? '💵' : (paymentMethod === 'transfer' ? '📱' : '📲');
+            const pt = paymentMethod === 'cash' ? 'เงินสด' : (paymentMethod === 'transfer' ? 'โอนเงิน' : 'QR Code');
+            const msg = `\n💰 บิลใหม่: ${invoiceNo}\n${methodEmoji} รับเงิน: ${formatCurrency(cartTotal)}\n🛒 จำนวน: ${cart.reduce((s,c)=>s+c.qty,0)} ชิ้น\n💳 ช่องทาง: ${pt}`;
+            sendLineNotify(s.lineNotifyToken, msg);
+        }
+
         if (tx.tierUpgrade) {
             setTimeout(() => toast(`🏆 ${tx.tierUpgrade.customer.name} อัพเกรดเป็น ${tx.tierUpgrade.newTier.emoji} ${tx.tierUpgrade.newTier.label}!`), 500)
         }
