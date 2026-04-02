@@ -88,3 +88,73 @@ export async function sendMessageToAI(message) {
         return "ขออภัยครับ เกิดข้อผิดพลาดในการประมวลผลของ AI"
     }
 }
+
+/**
+ * Verify a payment slip image using Gemini Vision AI
+ * @param {string} imageBase64 — base64-encoded image (without data:image prefix)
+ * @param {string} mimeType — e.g. 'image/jpeg', 'image/png'
+ * @param {number} expectedAmount — the expected payment amount
+ * @param {string} promptPayName — the expected recipient name (optional)
+ * @returns {Promise<{valid: boolean, amount: number|null, date: string|null, recipient: string|null, reason: string, raw: string}>}
+ */
+export async function verifyPaymentSlip(imageBase64, mimeType, expectedAmount, promptPayName = '') {
+    if (!model) {
+        return { valid: false, amount: null, date: null, recipient: null, reason: 'ไม่สามารถเชื่อมต่อ AI ได้ (ตรวจสอบ API Key)', raw: '' }
+    }
+
+    const prompt = `คุณคือระบบตรวจสอบสลิปโอนเงิน กรุณาวิเคราะห์ภาพสลิปนี้แล้วตอบเป็น JSON เท่านั้น (ไม่ต้องมี markdown):
+{
+  "amount": ตัวเลขจำนวนเงินที่โอน (number, หรือ null ถ้าอ่านไม่ได้),
+  "date": "วันที่/เวลาที่โอน (string, หรือ null)",
+  "recipient": "ชื่อผู้รับเงิน (string, หรือ null)",
+  "bank": "ธนาคารผู้รับ (string, หรือ null)",
+  "status": "SUCCESS" หรือ "FAILED" หรือ "UNKNOWN",
+  "isSlip": true หรือ false (ภาพนี้เป็นสลิปโอนเงินจริงไหม)
+}
+
+ข้อมูลที่ต้องตรวจสอบ:
+- ยอดเงินที่ควรจะเป็น: ${expectedAmount.toFixed(2)} บาท
+${promptPayName ? `- ชื่อผู้รับที่ควรจะเป็น: ${promptPayName}` : ''}
+
+ตอบเป็น JSON เท่านั้น ไม่ต้องอธิบายเพิ่ม`
+
+    try {
+        const result = await model.generateContent([
+            { text: prompt },
+            { inlineData: { mimeType, data: imageBase64 } }
+        ])
+        const raw = result.response.text().trim()
+        // Parse JSON from response (strip markdown fences if any)
+        const jsonStr = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
+        const data = JSON.parse(jsonStr)
+
+        // Determine validity
+        const amountMatch = data.amount != null && Math.abs(data.amount - expectedAmount) < 1 // tolerance ±1 baht
+        const recipientMatch = !promptPayName || !data.recipient || data.recipient.toLowerCase().includes(promptPayName.toLowerCase()) || promptPayName.toLowerCase().includes(data.recipient.toLowerCase())
+        const isSuccess = data.status === 'SUCCESS'
+        const valid = data.isSlip && isSuccess && amountMatch
+
+        let reason = ''
+        if (!data.isSlip) reason = 'ภาพนี้ไม่ใช่สลิปโอนเงิน'
+        else if (!isSuccess) reason = 'สลิปแสดงสถานะไม่สำเร็จ'
+        else if (!amountMatch) reason = `ยอดเงินไม่ตรง — สลิป: ${data.amount} บาท, ที่ต้องจ่าย: ${expectedAmount.toFixed(2)} บาท`
+        else if (!recipientMatch) reason = `ชื่อผู้รับอาจไม่ตรง — สลิป: "${data.recipient}"`
+        else reason = 'สลิปถูกต้อง ✅'
+
+        return {
+            valid,
+            amount: data.amount,
+            date: data.date,
+            recipient: data.recipient,
+            bank: data.bank,
+            reason,
+            raw,
+            amountMatch,
+            recipientMatch,
+        }
+    } catch (err) {
+        console.error('Error verifying slip:', err)
+        return { valid: false, amount: null, date: null, recipient: null, reason: `AI ไม่สามารถอ่านสลิปได้: ${err.message}`, raw: '' }
+    }
+}
+

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { getProducts, addTransaction, getCustomers, formatCurrency, formatDate, playSound, getTopProducts, getCategoryEmoji, applyPromotions, getPromotions, CATEGORIES, holdBill, getHeldBills, resumeBill, deleteHeldBill, getRecentSales, addCredit, getUnpaidCredits, getSettings, redeemPoints, generateInvoiceNumber, getCustomerTier, getNextTier, getTierDiscount, MEMBERSHIP_TIERS, getRewards, redeemReward, seedDefaultRewards, applyCoupon, useCoupon } from '../lib/storage.js'
 import { useToast, useShift } from '../App.jsx'
+import { verifyPaymentSlip, isAIAvailable } from '../lib/aiService.js'
 import BarcodeScanner from '../components/BarcodeScanner.jsx'
 import ReceiptPrinter from '../components/ReceiptPrinter.jsx'
 import { Link, useNavigate } from 'react-router-dom'
@@ -38,6 +39,10 @@ export default function StockOut() {
     const [couponCode, setCouponCode] = useState('')
     const [appliedCoupon, setAppliedCoupon] = useState(null) // { coupon, discount }
     const toast = useToast()
+    const slipInputRef = useRef(null)
+    const [slipVerification, setSlipVerification] = useState(null) // AI verification result
+    const [slipPreview, setSlipPreview] = useState(null) // base64 preview
+    const [slipVerifying, setSlipVerifying] = useState(false) // loading state
 
     const selectedCustomerData = customers.find(c => c.id === selectedCustomer)
     const customerTier = selectedCustomerData ? getCustomerTier(selectedCustomerData) : null
@@ -243,7 +248,9 @@ export default function StockOut() {
         const ch = posChannelRef.current
         if (!ch) return
         try { ch.postMessage({ type: 'PAYMENT_QR_CLEAR' }) } catch (e) { /* channel closed */ }
+        setSlipVerification(null); setSlipPreview(null); setSlipVerifying(false)
     }
+
 
     const handleCheckout = () => {
         if (!activeShift) { toast('กรุณาเปิดกะก่อนขายสินค้า', 'error'); navigate('/shifts'); return }
@@ -830,7 +837,91 @@ export default function StockOut() {
                                         ))}
                                     </div>
                                 </>
-                            ) : <div style={{ textAlign: 'center', padding: 'var(--space-lg)', color: 'var(--text-secondary)' }}><div style={{ fontSize: '3rem', marginBottom: '8px' }}>{paymentMethod === 'transfer' ? '📱' : '📲'}</div><p>กดยืนยันเมื่อได้รับเงินแล้ว</p></div>}
+                            ) : (
+                                <div style={{ textAlign: 'center', padding: 'var(--space-lg)' }}>
+                                    {/* Primary: Confirm when paid */}
+                                    {!slipPreview && !slipVerifying && (
+                                        <>
+                                            <div style={{ fontSize: '3rem', marginBottom: '8px' }}>{paymentMethod === 'transfer' ? '📱' : '📲'}</div>
+                                            <p style={{ color: 'var(--text-secondary)', fontWeight: 600, marginBottom: '16px' }}>กดยืนยันเมื่อลูกค้าจ่ายแล้ว</p>
+                                        </>
+                                    )}
+
+                                    {/* Slip verification result */}
+                                    {slipVerifying && (
+                                        <div style={{ padding: '16px', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)', marginBottom: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+                                            <span style={{ animation: 'pulse 1s infinite', fontSize: '1.5rem' }}>🤖</span>
+                                            <span style={{ fontSize: '13px', color: 'var(--text-secondary)', fontWeight: 600 }}>AI กำลังตรวจสอบสลิป...</span>
+                                        </div>
+                                    )}
+
+                                    {slipPreview && !slipVerifying && (
+                                        <div style={{ marginBottom: '12px' }}>
+                                            <img src={slipPreview} alt="slip" style={{ maxHeight: '120px', borderRadius: 'var(--radius-md)', border: '2px solid var(--border)', objectFit: 'contain' }} />
+                                        </div>
+                                    )}
+
+                                    {slipVerification && !slipVerifying && (
+                                        <div style={{
+                                            padding: '10px 14px', borderRadius: 'var(--radius-md)', marginBottom: '12px',
+                                            background: slipVerification.valid ? 'rgba(74,222,128,0.1)' : 'rgba(248,113,113,0.1)',
+                                            border: `1.5px solid ${slipVerification.valid ? '#4ade80' : '#f87171'}`,
+                                        }}>
+                                            <div style={{ fontSize: '13px', fontWeight: 700, color: slipVerification.valid ? '#4ade80' : '#f87171', marginBottom: '4px' }}>
+                                                {slipVerification.valid ? '✅' : '⚠️'} {slipVerification.reason}
+                                            </div>
+                                            <div style={{ display: 'flex', gap: '12px', fontSize: '11px', color: 'var(--text-secondary)', justifyContent: 'center', flexWrap: 'wrap' }}>
+                                                {slipVerification.amount != null && <span>💰 {slipVerification.amount}฿</span>}
+                                                {slipVerification.recipient && <span>👤 {slipVerification.recipient}</span>}
+                                                {slipVerification.date && <span>📅 {slipVerification.date}</span>}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Collapsible: Verify slip (optional) */}
+                                    {!slipVerifying && (
+                                        <div style={{ borderTop: '1px solid var(--border)', paddingTop: '10px', marginTop: slipPreview ? '0' : '4px' }}>
+                                            <button
+                                                className="btn btn-ghost btn-sm"
+                                                style={{ fontSize: '11px', color: 'var(--text-muted)', gap: '4px' }}
+                                                onClick={() => slipInputRef.current?.click()}
+                                            >
+                                                🔍 {slipPreview ? 'อัปโหลดสลิปใหม่' : 'ไม่แน่ใจ? ตรวจสลิป'}
+                                            </button>
+                                            <input type="file" ref={slipInputRef} accept="image/*" style={{ display: 'none' }} onChange={async (e) => {
+                                                const file = e.target.files?.[0]
+                                                if (!file) return
+                                                const reader = new FileReader()
+                                                reader.onload = async (ev) => {
+                                                    const dataUrl = ev.target.result
+                                                    setSlipPreview(dataUrl)
+                                                    const [header, base64] = dataUrl.split(',')
+                                                    const mime = header.match(/:(.*?);/)?.[1] || 'image/jpeg'
+                                                    if (!isAIAvailable()) {
+                                                        setSlipVerification({ valid: false, reason: 'ไม่ได้ตั้งค่า API Key', amount: null, date: null, recipient: null })
+                                                        return
+                                                    }
+                                                    setSlipVerifying(true)
+                                                    setSlipVerification(null)
+                                                    try {
+                                                        const s = getSettings()
+                                                        const result = await verifyPaymentSlip(base64, mime, cartTotal, s.promptPayName || '')
+                                                        setSlipVerification(result)
+                                                        if (result.valid) playSound('success')
+                                                        else playSound('error')
+                                                    } catch (err) {
+                                                        setSlipVerification({ valid: false, reason: 'เกิดข้อผิดพลาด: ' + err.message, amount: null, date: null, recipient: null })
+                                                    } finally {
+                                                        setSlipVerifying(false)
+                                                    }
+                                                }
+                                                reader.readAsDataURL(file)
+                                                e.target.value = ''
+                                            }} />
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
                         <div className="modal-footer">
                             <button className="btn btn-secondary" onClick={() => { setShowCheckout(false); broadcastPaymentQRClear() }}>ยกเลิก</button>
