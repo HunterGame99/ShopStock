@@ -184,7 +184,12 @@ export default function Layout({ children }) {
                             {gi > 0 && <div className="nav-divider" />}
                             {!isCollapsed && <div className="nav-group-label">{group.label}</div>}
                             {group.items.map(item => (
-                                <NavLink key={item.path} to={item.path} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} end={item.path === '/'}>
+                                <NavLink 
+                                    key={item.path} 
+                                    to={item.path} 
+                                    className={({ isActive }) => `nav-link ${isActive ? 'active' : ''} ${item.path === '/stock-out' ? 'nav-highlight' : ''}`} 
+                                    end={item.path === '/'}
+                                >
                                     <span className="nav-icon" title={isCollapsed ? item.label : ''}>{item.icon}</span>
                                     {!isCollapsed && <span>{item.label}</span>}
                                     {item.path === '/' && alerts.length > 0 && <span className="notification-dot">{alerts.length}</span>}
