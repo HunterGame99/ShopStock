@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx vite:*)",
+      "Bash(timeout 8 npm run dev)",
+      "Bash(npm run:*)",
+      "Bash(curl -s http://localhost:5173/stock-out)",
+      "Read(//Users/golf/Desktop/Project/ShopStock/**)"
+    ]
+  }
+}

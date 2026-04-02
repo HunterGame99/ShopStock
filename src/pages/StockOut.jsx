@@ -11,8 +11,6 @@ export default function StockOut() {
     const [products, setProducts] = useState([])
     const [search, setSearch] = useState('')
     const [cart, setCart] = useState([])
-    const [discount, setDiscount] = useState('')
-    const [discountType, setDiscountType] = useState('baht')
     const [paymentMethod, setPaymentMethod] = useState('cash')
     const [showCheckout, setShowCheckout] = useState(false)
     const [payment, setPayment] = useState('')
@@ -33,6 +31,10 @@ export default function StockOut() {
     const [numpadValue, setNumpadValue] = useState('')
     const [pointsUsed, setPointsUsed] = useState(0)
     const [settings, setSettings] = useState({ shopName: 'ShopStock', shopAddress: '', shopPhone: '', receiptFooter: 'ขอบคุณที่ใช้บริการ ❤️', vatEnabled: false, vatRate: 7 })
+    const [showMemberStep, setShowMemberStep] = useState(false)
+    const [memberSearch, setMemberSearch] = useState('')
+    const [customerSearchText, setCustomerSearchText] = useState('')
+    const [showCustomerDropdown, setShowCustomerDropdown] = useState(false)
     const toast = useToast()
 
     const selectedCustomerData = customers.find(c => c.id === selectedCustomer)
@@ -40,7 +42,7 @@ export default function StockOut() {
     const customerNextTier = selectedCustomerData ? getNextTier(selectedCustomerData) : null
     const tierDiscount = customerTier ? customerTier.discount : 0
     const pointRate = customerTier ? customerTier.pointRate : 25
-    const pointsToEarn = Math.floor((cart.reduce((s, c) => s + (c.qty * c.price), 0) - (Number(discount) || 0) - promoDiscount) / pointRate)
+    const pointsToEarn = Math.floor((cart.reduce((s, c) => s + (c.qty * c.price), 0) - promoDiscount) / pointRate)
 
     const reload = () => {
         const allProducts = getProducts()
@@ -69,10 +71,39 @@ export default function StockOut() {
             } else if (cart.length === 0) {
                 ch.postMessage({ type: 'CLEAR' });
             } else {
-                ch.postMessage({ type: 'CART_UPDATE', cart: cart.map(c => ({ productName: c.productName, emoji: c.emoji, price: c.price, qty: c.qty })) });
+                ch.postMessage({
+                    type: 'CART_UPDATE',
+                    cart: cart.map(c => ({ productName: c.productName, emoji: c.emoji, price: c.price, qty: c.qty })),
+                    total: cartTotal,
+                    discounts: { member: memberDiscount, promo: promoDiscount, manual: 0, points: pointsUsed },
+                });
             }
         } catch (e) { /* channel closed */ }
-    }, [cart, showReceipt]);
+    }, [cart, showReceipt, promoDiscount, pointsUsed, selectedCustomer, customers]);
+
+    // Broadcast member info to Customer Display
+    useEffect(() => {
+        const ch = posChannelRef.current;
+        if (!ch) return;
+        try {
+            if (selectedCustomerData && customerTier) {
+                ch.postMessage({
+                    type: 'MEMBER_UPDATE',
+                    member: {
+                        name: selectedCustomerData.name,
+                        totalSpent: selectedCustomerData.totalSpent || 0,
+                        points: selectedCustomerData.points || 0,
+                        visitCount: selectedCustomerData.visitCount || 0,
+                        tier: { emoji: customerTier.emoji, label: customerTier.label, color: customerTier.color, discount: customerTier.discount },
+                        memberDiscount,
+                        promoDiscount,
+                    }
+                });
+            } else {
+                ch.postMessage({ type: 'MEMBER_CLEAR' });
+            }
+        } catch (e) { /* channel closed */ }
+    }, [selectedCustomer, customers, cart, promoDiscount]);
 
     useEffect(() => { setPromoDiscount(cart.length > 0 ? applyPromotions(cart) : 0) }, [cart])
 
@@ -97,7 +128,7 @@ export default function StockOut() {
                 else if (showRecent) setShowRecent(false);
                 else if (showReceipt) setShowReceipt(null);
                 else if (showScanner) setShowScanner(false);
-                else { setCart([]); setDiscount(''); setSelectedCustomer(''); toast('ล้างตะกร้า') }
+                else { setCart([]); setSelectedCustomer(''); toast('ล้างตะกร้า') }
             }
         }
         window.addEventListener('keydown', handleKey)
@@ -146,8 +177,7 @@ export default function StockOut() {
 
     const subtotal = cart.reduce((s, c) => s + (c.qty * c.price), 0)
     const memberDiscount = tierDiscount > 0 ? Math.round(subtotal * tierDiscount / 100) : 0
-    const manualDiscount = discountType === 'percent' ? subtotal * (Number(discount) || 0) / 100 : (Number(discount) || 0)
-    const totalDiscount = manualDiscount + promoDiscount + pointsUsed + memberDiscount
+    const totalDiscount = promoDiscount + pointsUsed + memberDiscount
     const cartTotal = Math.max(0, subtotal - totalDiscount)
     const vatAmount = settings.vatEnabled ? (cartTotal * settings.vatRate / (100 + settings.vatRate)) : 0
     const netAmount = cartTotal - vatAmount
@@ -160,7 +190,7 @@ export default function StockOut() {
         holdBill(cart, selectedCustomer, '')
         toast('📋 พักบิลแล้ว')
         playSound('scan')
-        setCart([]); setDiscount(''); setSelectedCustomer('')
+        setCart([]); setSelectedCustomer('')
         reload()
     }
 
@@ -189,13 +219,31 @@ export default function StockOut() {
         addCredit(selectedCustomer, cartTotal, cart.map(c => ({ productName: c.productName, qty: c.qty, price: c.price })), `บิล #${tx.id.slice(-6)}`)
         playSound('success')
         toast('💳 บันทึกเงินเชื่อสำเร็จ')
-        setCart([]); setDiscount(''); setSelectedCustomer('')
+        setCart([]); setSelectedCustomer('')
         reload()
     }
 
     const handleCheckout = () => {
         if (!activeShift) { toast('กรุณาเปิดกะก่อนขายสินค้า', 'error'); navigate('/shifts'); return }
         if (cart.length === 0) { toast('เพิ่มสินค้า', 'error'); return }
+        if (!selectedCustomer) {
+            setMemberSearch('')
+            setShowMemberStep(true)
+            return
+        }
+        setPayment(paymentMethod === 'cash' ? '' : cartTotal.toString())
+        setShowCheckout(true)
+    }
+
+    const proceedCheckoutAsGuest = () => {
+        setShowMemberStep(false)
+        setPayment(paymentMethod === 'cash' ? '' : cartTotal.toString())
+        setShowCheckout(true)
+    }
+
+    const proceedCheckoutWithMember = (customerId) => {
+        setSelectedCustomer(customerId)
+        setShowMemberStep(false)
         setPayment(paymentMethod === 'cash' ? '' : cartTotal.toString())
         setShowCheckout(true)
     }
@@ -216,7 +264,7 @@ export default function StockOut() {
         }
         playSound('success')
         setShowReceipt({ ...tx, payment: payAmount, change: paymentMethod === 'cash' ? payAmount - cartTotal : 0 })
-        setShowCheckout(false); setCart([]); setDiscount(''); setPayment(''); setSelectedCustomer(''); setPointsUsed(0)
+        setShowCheckout(false); setCart([]); setPayment(''); setSelectedCustomer(''); setPointsUsed(0)
         toast('ขายสำเร็จ! 🎉'); reload()
     }
 
@@ -237,7 +285,7 @@ export default function StockOut() {
         if (key === '⌫') { setNumpadValue(v => v.slice(0, -1)); return }
         if (key === '✓') {
             if (numpadTarget === 'payment') setPayment(numpadValue)
-            else if (numpadTarget === 'discount') setDiscount(numpadValue)
+
             setShowNumpad(false); setNumpadValue(''); return
         }
         setNumpadValue(v => v + key)
@@ -337,29 +385,104 @@ export default function StockOut() {
                     </div>
 
                     {/* Customer & Membership */}
-                    <div style={{ padding: '6px var(--space-md)', borderBottom: '1px solid var(--border)' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>ข้อมูลลูกค้า</span>
-                            <button className="btn btn-ghost btn-sm" onClick={() => setShowPortalQR(true)} style={{ fontSize: '10px', color: 'var(--accent-primary)', padding: '2px 4px', height: 'auto' }}>📱 QR เช็คแต้ม</button>
+                    <div style={{ padding: '8px var(--space-md)', borderBottom: '1px solid var(--border)', background: selectedCustomerData ? `${customerTier?.color}08` : 'transparent', borderLeft: selectedCustomerData ? `3px solid ${customerTier?.color}` : '3px solid transparent', transition: 'all 0.3s' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                            <span style={{ fontSize: '11px', color: selectedCustomerData ? customerTier?.color : 'var(--text-secondary)', fontWeight: 700, letterSpacing: '0.3px' }}>
+                                👤 {selectedCustomerData ? `${customerTier?.emoji} ${customerTier?.label} Member` : 'ข้อมูลลูกค้า'}
+                            </span>
+                            <button className="btn btn-ghost btn-sm" onClick={() => setShowPortalQR(true)} style={{ fontSize: '10px', color: 'var(--accent-primary)', padding: '2px 6px', height: 'auto', border: '1px solid var(--accent-primary)44', borderRadius: '6px' }}>📱 QR แต้ม</button>
                         </div>
-                        <select className="form-control" value={selectedCustomer} onChange={e => setSelectedCustomer(e.target.value)} style={{ padding: '6px 10px', fontSize: 'var(--font-size-xs)' }}>
-                            <option value="">👤 ลูกค้าทั่วไป</option>
-                            {customers.map(c => {
-                                const t = getCustomerTier(c)
-                                return <option key={c.id} value={c.id}>{t.emoji} {c.name} {c.phone ? `(${c.phone})` : ''}</option>
-                            })}
-                        </select>
+
+                        {/* Customer Search Input */}
+                        {selectedCustomerData ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'var(--bg-secondary)', border: `1px solid ${customerTier?.color || 'var(--border)'}55`, borderRadius: 'var(--radius-md)', padding: '6px 10px' }}>
+                                <span style={{ fontSize: '1rem' }}>{customerTier?.emoji}</span>
+                                <span style={{ flex: 1, fontSize: 'var(--font-size-xs)', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                    {selectedCustomerData.name}
+                                    {selectedCustomerData.phone && <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}> ({selectedCustomerData.phone})</span>}
+                                </span>
+                                <button onClick={() => { setSelectedCustomer(''); setCustomerSearchText(''); setPointsUsed(0) }} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '12px', padding: '0 2px' }}>✕</button>
+                            </div>
+                        ) : (
+                            <div style={{ position: 'relative' }}>
+                                <div className="table-search" style={{ margin: 0 }}>
+                                    <span className="search-icon">👤</span>
+                                    <input
+                                        type="text"
+                                        placeholder="พิมพ์ชื่อ / เบอร์โทรสมาชิก..."
+                                        value={customerSearchText}
+                                        onChange={e => { setCustomerSearchText(e.target.value); setShowCustomerDropdown(true) }}
+                                        onFocus={() => setShowCustomerDropdown(true)}
+                                        onBlur={() => setTimeout(() => setShowCustomerDropdown(false), 150)}
+                                        style={{ fontSize: 'var(--font-size-xs)' }}
+                                    />
+                                </div>
+                                {showCustomerDropdown && (
+                                    <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 100, background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)', maxHeight: '180px', overflowY: 'auto', marginTop: '2px' }}>
+                                        {(customerSearchText
+                                            ? customers.filter(c =>
+                                                c.name.toLowerCase().includes(customerSearchText.toLowerCase()) ||
+                                                (c.phone || '').includes(customerSearchText))
+                                            : customers
+                                        ).slice(0, 8).map(c => {
+                                            const t = getCustomerTier(c)
+                                            return (
+                                                <div key={c.id} onMouseDown={() => { setSelectedCustomer(c.id); setCustomerSearchText(''); setShowCustomerDropdown(false) }}
+                                                    style={{ padding: '7px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', borderBottom: '1px solid var(--border)', fontSize: 'var(--font-size-xs)' }}
+                                                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-secondary)'}
+                                                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                                                    <span>{t.emoji}</span>
+                                                    <div style={{ flex: 1 }}>
+                                                        <div style={{ fontWeight: 700 }}>{c.name}</div>
+                                                        <div style={{ color: 'var(--text-muted)', fontSize: '10px' }}>{c.phone || 'ไม่มีเบอร์'} • {t.label} • 🪙{c.points || 0}pt</div>
+                                                    </div>
+                                                    {t.discount > 0 && <span style={{ fontSize: '9px', color: t.color, fontWeight: 700, background: `${t.color}22`, padding: '1px 5px', borderRadius: '6px' }}>ลด {t.discount}%</span>}
+                                                </div>
+                                            )
+                                        })}
+                                        {customers.length === 0 && <div style={{ padding: '10px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'var(--font-size-xs)' }}>ไม่มีสมาชิก</div>}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Customer Info Card */}
                         {selectedCustomerData && customerTier && (
                             <div style={{ marginTop: '6px', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)', padding: '8px 10px', border: `1px solid ${customerTier.color}33` }}>
-                                {/* Tier Badge */}
+                                {/* Tier + Points */}
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                         <span style={{ fontSize: '1.1rem' }}>{customerTier.emoji}</span>
                                         <span style={{ fontSize: '11px', fontWeight: 800, color: customerTier.color }}>{customerTier.label}</span>
-                                        {tierDiscount > 0 && <span style={{ fontSize: '9px', background: `${customerTier.color}22`, color: customerTier.color, padding: '1px 6px', borderRadius: '8px', fontWeight: 700 }}>ลด {tierDiscount}%</span>}
                                     </div>
                                     <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-primary)' }}>🪙 {(selectedCustomerData.points || 0).toLocaleString()} pt</span>
                                 </div>
+
+                                {/* Discount preview (if cart has items) */}
+                                {cart.length > 0 && (memberDiscount > 0 || promoDiscount > 0) && (
+                                    <div style={{ margin: '6px 0', background: 'var(--bg-primary)', borderRadius: 'var(--radius-sm)', padding: '5px 8px', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                                        {memberDiscount > 0 && (
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}>
+                                                <span style={{ color: customerTier.color, fontWeight: 700 }}>✨ ส่วนลดสมาชิก {tierDiscount}%</span>
+                                                <span style={{ color: 'var(--danger)', fontWeight: 800 }}>-{formatCurrency(memberDiscount)}</span>
+                                            </div>
+                                        )}
+                                        {promoDiscount > 0 && (
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}>
+                                                <span style={{ color: 'var(--warning, #f59e0b)', fontWeight: 700 }}>🏷️ โปรโมชั่นร้าน</span>
+                                                <span style={{ color: 'var(--danger)', fontWeight: 800 }}>-{formatCurrency(promoDiscount)}</span>
+                                            </div>
+                                        )}
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', borderTop: '1px solid var(--border)', paddingTop: '3px', marginTop: '1px' }}>
+                                            <span style={{ fontWeight: 700 }}>รวมประหยัด</span>
+                                            <span style={{ color: 'var(--danger)', fontWeight: 900 }}>-{formatCurrency(memberDiscount + promoDiscount)}</span>
+                                        </div>
+                                    </div>
+                                )}
+                                {cart.length > 0 && memberDiscount === 0 && promoDiscount === 0 && tierDiscount === 0 && customerNextTier && (
+                                    <div style={{ fontSize: '9px', color: 'var(--text-muted)', marginBottom: '4px' }}>สะสมยอดอีก {formatCurrency(customerNextTier.minSpent - (selectedCustomerData.totalSpent || 0))} เพื่อรับส่วนลด {customerNextTier.discount}%</div>
+                                )}
+
                                 {/* Progress to next tier */}
                                 {customerNextTier && (
                                     <div style={{ marginTop: '4px' }}>
@@ -375,6 +498,7 @@ export default function StockOut() {
                                 {!customerNextTier && (
                                     <div style={{ fontSize: '9px', color: customerTier.color, fontWeight: 600, marginTop: '2px' }}>⭐ ระดับสูงสุดแล้ว!</div>
                                 )}
+
                                 {/* Points actions */}
                                 {(selectedCustomerData.points || 0) > 0 && cart.length > 0 && (
                                     <div style={{ display: 'flex', gap: '4px', marginTop: '6px' }}>
@@ -382,7 +506,7 @@ export default function StockOut() {
                                             <button className="btn btn-ghost btn-sm" onClick={() => setPointsUsed(0)} style={{ fontSize: '10px', color: 'var(--danger)', flex: 1 }}>✕ ยกเลิกแลก ({pointsUsed} pt)</button>
                                         ) : (
                                             <button className="btn btn-primary btn-sm" onClick={() => {
-                                                const maxPoints = Math.min(selectedCustomerData.points || 0, subtotal - manualDiscount - promoDiscount)
+                                                const maxPoints = Math.min(selectedCustomerData.points || 0, subtotal - promoDiscount)
                                                 if (maxPoints <= 0) return
                                                 const input = window.prompt(`แลกกี่คะแนน? (สูงสุด ${maxPoints} คะแนน = ฿${maxPoints})`, maxPoints)
                                                 if (input && Number(input) > 0 && Number(input) <= maxPoints) setPointsUsed(Number(input))
@@ -390,6 +514,14 @@ export default function StockOut() {
                                         )}
                                     </div>
                                 )}
+                            </div>
+                        )}
+
+                        {/* Promo discount hint (no member selected but promo active) */}
+                        {!selectedCustomerData && promoDiscount > 0 && cart.length > 0 && (
+                            <div style={{ marginTop: '5px', padding: '5px 8px', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-sm)', display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}>
+                                <span style={{ color: '#f59e0b', fontWeight: 700 }}>🏷️ โปรโมชั่นร้าน</span>
+                                <span style={{ color: 'var(--danger)', fontWeight: 800 }}>-{formatCurrency(promoDiscount)}</span>
                             </div>
                         )}
                     </div>
@@ -437,21 +569,11 @@ export default function StockOut() {
                                 )}
                             </div>
 
-                            {/* Discount */}
-                            <div style={{ padding: '4px var(--space-md)', borderTop: '1px solid var(--border)', display: 'flex', gap: '4px', alignItems: 'center' }}>
-                                <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>🏷️</span>
-                                <input className="form-control" type="number" min="0" value={discount} onChange={e => setDiscount(e.target.value)} placeholder="ส่วนลด" style={{ padding: '5px 8px', fontSize: 'var(--font-size-xs)', width: '70px' }} />
-                                <select className="form-control" value={discountType} onChange={e => setDiscountType(e.target.value)} style={{ padding: '5px 8px', fontSize: 'var(--font-size-xs)', width: 'auto' }}>
-                                    <option value="baht">฿</option><option value="percent">%</option>
-                                </select>
-                                <button className="btn btn-ghost btn-sm" onClick={() => { setNumpadTarget('discount'); setNumpadValue(discount); setShowNumpad(true) }} title="Numpad" style={{ padding: '4px' }}>🔢</button>
-                            </div>
-
                             {/* Summary */}
                             <div className="cart-summary">
                                 <div className="cart-summary-row"><span>ราคาสินค้า</span><span>{formatCurrency(subtotal)}</span></div>
                                 {memberDiscount > 0 && <div className="cart-summary-row" style={{ color: 'var(--danger)' }}><span>{customerTier?.emoji} สมาชิก {customerTier?.label} ({tierDiscount}%)</span><span>-{formatCurrency(memberDiscount)}</span></div>}
-                                {manualDiscount > 0 && <div className="cart-summary-row" style={{ color: 'var(--danger)' }}><span>ส่วนลด</span><span>-{formatCurrency(manualDiscount)}</span></div>}
+
                                 {promoDiscount > 0 && <div className="cart-summary-row" style={{ color: 'var(--danger)' }}><span>🏷️ โปรโมชั่น</span><span>-{formatCurrency(promoDiscount)}</span></div>}
                                 {pointsUsed > 0 && <div className="cart-summary-row" style={{ color: 'var(--danger)' }}><span>🎁 แลกแต้ม ({pointsUsed} คะแนน)</span><span>-{formatCurrency(pointsUsed)}</span></div>}
                                 <div className="cart-summary-row total"><span>ยอดรวม</span><span>{formatCurrency(cartTotal)}</span></div>
@@ -479,12 +601,154 @@ export default function StockOut() {
                 </div>
             </div>
 
+            {/* Member Step Modal */}
+            {showMemberStep && (() => {
+                const filteredMembers = customers.filter(c =>
+                    !memberSearch ||
+                    c.name.toLowerCase().includes(memberSearch.toLowerCase()) ||
+                    (c.phone || '').includes(memberSearch)
+                )
+                return (
+                    <div className="modal-overlay" onClick={() => setShowMemberStep(false)}>
+                        <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '480px' }}>
+                            <div className="modal-header">
+                                <h3>👤 เลือกสมาชิก</h3>
+                                <button className="btn btn-ghost btn-icon" onClick={() => setShowMemberStep(false)}>✕</button>
+                            </div>
+                            <div className="modal-body">
+                                <div style={{ marginBottom: 'var(--space-md)', padding: '10px 14px', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                                    💡 เลือกสมาชิกเพื่อรับส่วนลดและสะสมคะแนน หรือข้ามหากเป็นลูกค้าทั่วไป
+                                </div>
+                                <div className="table-search" style={{ marginBottom: 'var(--space-md)' }}>
+                                    <span className="search-icon">🔍</span>
+                                    <input
+                                        type="text"
+                                        placeholder="ค้นหาชื่อ / เบอร์โทร..."
+                                        value={memberSearch}
+                                        onChange={e => setMemberSearch(e.target.value)}
+                                        autoFocus
+                                    />
+                                </div>
+                                <div style={{ maxHeight: '340px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                    {filteredMembers.length === 0 && (
+                                        <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 'var(--space-lg)' }}>ไม่พบสมาชิก</div>
+                                    )}
+                                    {filteredMembers.map(c => {
+                                        const t = getCustomerTier(c)
+                                        const nt = getNextTier(c)
+                                        const previewSubtotal = cart.reduce((s, i) => s + (i.qty * i.price), 0)
+                                        const previewMemberDiscount = t.discount > 0 ? Math.round(previewSubtotal * t.discount / 100) : 0
+                                        const totalSaving = previewMemberDiscount + promoDiscount
+                                        return (
+                                            <button
+                                                key={c.id}
+                                                onClick={() => proceedCheckoutWithMember(c.id)}
+                                                style={{
+                                                    display: 'block', width: '100%', textAlign: 'left',
+                                                    background: 'var(--bg-secondary)', border: `1px solid ${t.color}44`,
+                                                    borderRadius: 'var(--radius-md)', padding: '10px 14px', cursor: 'pointer',
+                                                    transition: 'background 0.15s'
+                                                }}
+                                                onMouseEnter={e => e.currentTarget.style.background = `${t.color}12`}
+                                                onMouseLeave={e => e.currentTarget.style.background = 'var(--bg-secondary)'}
+                                            >
+                                                {/* Name + tier + points */}
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                        <span style={{ fontSize: '1.3rem' }}>{t.emoji}</span>
+                                                        <div>
+                                                            <div style={{ fontWeight: 700, fontSize: '13px', color: 'var(--text-primary)' }}>{c.name}</div>
+                                                            <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                                                                <span style={{ color: t.color, fontWeight: 700 }}>{t.label}</span>
+                                                                {c.phone ? ` • ${c.phone}` : ''}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div style={{ textAlign: 'right', fontSize: '10px', color: 'var(--text-muted)' }}>
+                                                        <div>🪙 {(c.points || 0).toLocaleString()} pt</div>
+                                                        <div style={{ marginTop: '2px' }}>{c.visitCount || 0} ครั้ง</div>
+                                                    </div>
+                                                </div>
+
+                                                {/* Discount breakdown */}
+                                                {(previewMemberDiscount > 0 || promoDiscount > 0) && (
+                                                    <div style={{ marginTop: '8px', background: 'var(--bg-primary)', borderRadius: 'var(--radius-sm)', padding: '6px 10px', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                                                        {previewMemberDiscount > 0 && (
+                                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
+                                                                <span style={{ color: t.color, fontWeight: 700 }}>✨ ส่วนลดสมาชิก {t.discount}%</span>
+                                                                <span style={{ color: 'var(--danger)', fontWeight: 800 }}>-{formatCurrency(previewMemberDiscount)}</span>
+                                                            </div>
+                                                        )}
+                                                        {promoDiscount > 0 && (
+                                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
+                                                                <span style={{ color: 'var(--warning)', fontWeight: 700 }}>🏷️ โปรโมชั่น</span>
+                                                                <span style={{ color: 'var(--danger)', fontWeight: 800 }}>-{formatCurrency(promoDiscount)}</span>
+                                                            </div>
+                                                        )}
+                                                        {totalSaving > 0 && (
+                                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', borderTop: '1px solid var(--border)', paddingTop: '4px', marginTop: '2px' }}>
+                                                                <span style={{ fontWeight: 800, color: 'var(--text-primary)' }}>รวมประหยัด</span>
+                                                                <span style={{ fontWeight: 900, color: 'var(--danger)' }}>-{formatCurrency(totalSaving)}</span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
+                                                {previewMemberDiscount === 0 && promoDiscount === 0 && t.discount === 0 && (
+                                                    <div style={{ marginTop: '6px', fontSize: '10px', color: 'var(--text-muted)' }}>ระดับนี้ยังไม่มีส่วนลด — สะสมยอดเพิ่มเพื่ออัปเกรด</div>
+                                                )}
+
+                                                {/* Progress bar */}
+                                                <div style={{ marginTop: '6px', display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--text-muted)' }}>
+                                                    <span>ยอดสะสม {formatCurrency(c.totalSpent || 0)}</span>
+                                                    {nt && <span>ถึง {nt.emoji}{nt.label} อีก {formatCurrency(nt.minSpent - (c.totalSpent || 0))}</span>}
+                                                    {!nt && <span style={{ color: t.color, fontWeight: 700 }}>⭐ ระดับสูงสุด</span>}
+                                                </div>
+                                                {nt && (
+                                                    <div style={{ marginTop: '4px', height: '3px', background: 'var(--border)', borderRadius: '2px', overflow: 'hidden' }}>
+                                                        <div style={{ height: '100%', background: `linear-gradient(90deg, ${t.color}, ${nt.color})`, width: `${Math.min(100, ((c.totalSpent || 0) / nt.minSpent) * 100)}%` }} />
+                                                    </div>
+                                                )}
+                                            </button>
+                                        )
+                                    })}
+                                </div>
+                            </div>
+                            <div className="modal-footer">
+                                <button className="btn btn-secondary" onClick={proceedCheckoutAsGuest}>👤 ลูกค้าทั่วไป (ข้าม)</button>
+                                <button className="btn btn-ghost" onClick={() => setShowMemberStep(false)}>ยกเลิก</button>
+                            </div>
+                        </div>
+                    </div>
+                )
+            })()}
+
             {/* Checkout Modal */}
             {showCheckout && (
                 <div className="modal-overlay" onClick={() => setShowCheckout(false)}>
                     <div className="modal" onClick={e => e.stopPropagation()}>
                         <div className="modal-header"><h3>💳 ชำระเงิน</h3><button className="btn btn-ghost btn-icon" onClick={() => setShowCheckout(false)}>✕</button></div>
                         <div className="modal-body">
+                            {/* Customer confirm row */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)', marginBottom: 'var(--space-md)', border: selectedCustomerData ? `1px solid ${customerTier?.color}44` : '1px solid var(--border)' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
+                                    <span>{selectedCustomerData ? customerTier?.emoji : '👤'}</span>
+                                    <div>
+                                        <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
+                                            {selectedCustomerData ? selectedCustomerData.name : 'ลูกค้าทั่วไป'}
+                                        </div>
+                                        {selectedCustomerData && (
+                                            <div style={{ fontSize: '10px', color: customerTier?.color, fontWeight: 600 }}>
+                                                {customerTier?.label}
+                                                {memberDiscount > 0 && ` • ลด ${formatCurrency(memberDiscount)}`}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                                <button className="btn btn-ghost btn-sm" style={{ fontSize: '10px', color: 'var(--accent-primary)' }}
+                                    onClick={() => { setShowCheckout(false); setSelectedCustomer(''); setMemberSearch(''); setShowMemberStep(true) }}>
+                                    🔄 เปลี่ยน
+                                </button>
+                            </div>
                             <div className="checkout-total"><div className="total-label">ยอดที่ต้องชำระ</div><div className="total-amount">{formatCurrency(cartTotal)}</div></div>
                             {paymentMethod === 'cash' ? (
                                 <>
