@@ -7,8 +7,11 @@ import {
     pushProducts, pushTransactions, pushCustomers, pushShifts,
     pushPromotions, pushExpenses, pushTargets, pushHeldBills,
     pushCredits, pushUsers, pushSettings,
-    syncAllFromSupabase, hasCloudData, uploadAllToSupabase
+    syncAllFromSupabase, hasCloudData, uploadAllToSupabase,
+    fetchCloudDailySummary
 } from './supabaseStorage.js'
+
+export { fetchCloudDailySummary }
 import { sendTelegramNotify } from './telegramNotify.js'
 
 export const NEEDS_SYNC_KEY = 'shopstock_needs_sync';
@@ -428,6 +431,13 @@ export const EXPENSE_CATEGORIES = [
     { name: 'ค่าวัตถุดิบ/ของเสริม', icon: '🛒' },
     { name: 'เงินเดือนพนักงาน', icon: '👥' },
     { name: 'ค่าการตลาด', icon: '📢' },
+    { name: 'ค่าขนส่ง', icon: '🚚' },
+    { name: 'ค่าซ่อมแซม/บำรุง', icon: '🔧' },
+    { name: 'ค่าประกันภัย', icon: '🛡️' },
+    { name: 'ค่าภาษี/ค่าธรรมเนียม', icon: '🏛️' },
+    { name: 'ค่าบริการวิชาชีพ', icon: '📋' },
+    { name: 'ค่าอินเทอร์เน็ต/โทรศัพท์', icon: '📱' },
+    { name: 'ค่าเสื่อมราคา', icon: '📉' },
     { name: 'จิปาถะ', icon: '🛠️' },
 ]
 
@@ -733,6 +743,139 @@ export function getProfitReport(days = 30) {
         netMargin: revenue > 0 ? (netProfit / revenue) * 100 : 0,
         stockInvestment: stockIn
     }
+}
+
+// ===== Invoice Number =====
+export function generateInvoiceNumber() {
+    const settings = getSettings()
+    const prefix = settings.invoicePrefix || 'INV'
+    const num = settings.invoiceNextNumber || 1
+    const invoiceNo = `${prefix}-${String(num).padStart(6, '0')}`
+    saveSettings({ ...settings, invoiceNextNumber: num + 1 })
+    return invoiceNo
+}
+
+// ===== Tax Summary =====
+export function getTaxSummary(year, month) {
+    const txs = getTransactions()
+    const expenses = getExpenses()
+    const products = getProducts()
+    const settings = getSettings()
+    const vatRate = settings.vatRate || 7
+
+    const filterByPeriod = (date) => {
+        const d = new Date(date)
+        if (month && month > 0) {
+            return d.getFullYear() === year && d.getMonth() + 1 === month
+        }
+        return d.getFullYear() === year
+    }
+
+    const salesTxs = txs.filter(tx => tx.type === 'out' && filterByPeriod(tx.createdAt))
+    const stockInTxs = txs.filter(tx => tx.type === 'in' && filterByPeriod(tx.createdAt))
+    const periodExpenses = expenses.filter(e => filterByPeriod(e.createdAt))
+
+    const totalRevenue = salesTxs.reduce((s, tx) => s + tx.total, 0)
+    const totalCOGS = salesTxs.reduce((s, tx) => s + tx.items.reduce((c, i) => {
+        const p = products.find(pr => pr.id === i.productId)
+        return c + (p?.costPrice || 0) * i.qty
+    }, 0), 0)
+    const totalExpenses = periodExpenses.reduce((s, e) => s + e.amount, 0)
+    const grossProfit = totalRevenue - totalCOGS
+    const netProfit = grossProfit - totalExpenses
+
+    const vatOutput = settings.vatEnabled ? totalRevenue * vatRate / (100 + vatRate) : 0
+    const vatInput = settings.vatEnabled ? totalCOGS * vatRate / (100 + vatRate) : 0
+    const vatPayable = vatOutput - vatInput
+
+    const expenseByCategory = {}
+    periodExpenses.forEach(e => {
+        if (!expenseByCategory[e.category]) expenseByCategory[e.category] = 0
+        expenseByCategory[e.category] += e.amount
+    })
+
+    const monthlyBreakdown = []
+    if (!month) {
+        for (let m = 1; m <= 12; m++) {
+            const mSales = txs.filter(tx => tx.type === 'out' && new Date(tx.createdAt).getFullYear() === year && new Date(tx.createdAt).getMonth() + 1 === m)
+            const mExpenses = expenses.filter(e => new Date(e.createdAt).getFullYear() === year && new Date(e.createdAt).getMonth() + 1 === m)
+            const mRevenue = mSales.reduce((s, tx) => s + tx.total, 0)
+            const mCOGS = mSales.reduce((s, tx) => s + tx.items.reduce((c, i) => {
+                const p = products.find(pr => pr.id === i.productId)
+                return c + (p?.costPrice || 0) * i.qty
+            }, 0), 0)
+            const mExp = mExpenses.reduce((s, e) => s + e.amount, 0)
+            monthlyBreakdown.push({
+                month: m,
+                revenue: mRevenue,
+                cogs: mCOGS,
+                expenses: mExp,
+                grossProfit: mRevenue - mCOGS,
+                netProfit: mRevenue - mCOGS - mExp,
+                transactionCount: mSales.length
+            })
+        }
+    }
+
+    return {
+        totalRevenue, totalCOGS, grossProfit, totalExpenses, netProfit,
+        vatOutput, vatInput, vatPayable,
+        transactionCount: salesTxs.length,
+        expenseByCategory,
+        monthlyBreakdown,
+        stockInvestment: stockInTxs.reduce((s, tx) => s + tx.total, 0)
+    }
+}
+
+export function exportTaxCSV(year, month) {
+    const data = getTaxSummary(year, month)
+    const settings = getSettings()
+    const periodLabel = month ? `${year}-${String(month).padStart(2, '0')}` : `${year}`
+
+    let rows = []
+    rows.push(['สรุปภาษี - ' + (settings.shopName || 'ShopStock')])
+    rows.push(['เลขประจำตัวผู้เสียภาษี', settings.taxId || '-'])
+    rows.push(['ช่วงเวลา', periodLabel])
+    rows.push([])
+    rows.push(['หัวข้อ', 'จำนวนเงิน (บาท)'])
+    rows.push(['รายได้จากการขาย', data.totalRevenue.toFixed(2)])
+    rows.push(['ต้นทุนสินค้า (COGS)', data.totalCOGS.toFixed(2)])
+    rows.push(['กำไรขั้นต้น', data.grossProfit.toFixed(2)])
+    rows.push(['ค่าใช้จ่ายดำเนินงาน', data.totalExpenses.toFixed(2)])
+    rows.push(['กำไรสุทธิ', data.netProfit.toFixed(2)])
+    rows.push([])
+
+    if (settings.vatEnabled) {
+        rows.push(['--- ภาษีมูลค่าเพิ่ม (VAT ' + (settings.vatRate || 7) + '%) ---'])
+        rows.push(['VAT ขาย (Output Tax)', data.vatOutput.toFixed(2)])
+        rows.push(['VAT ซื้อ (Input Tax)', data.vatInput.toFixed(2)])
+        rows.push(['VAT ที่ต้องชำระ', data.vatPayable.toFixed(2)])
+        rows.push([])
+    }
+
+    rows.push(['--- ค่าใช้จ่ายแยกตามหมวดหมู่ ---'])
+    Object.entries(data.expenseByCategory).forEach(([cat, amount]) => {
+        rows.push([cat, amount.toFixed(2)])
+    })
+    rows.push([])
+
+    if (data.monthlyBreakdown.length > 0) {
+        rows.push(['--- สรุปรายเดือน ---'])
+        rows.push(['เดือน', 'รายได้', 'ต้นทุน', 'ค่าใช้จ่าย', 'กำไรขั้นต้น', 'กำไรสุทธิ', 'จำนวนบิล'])
+        const thaiMonths = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.']
+        data.monthlyBreakdown.forEach(m => {
+            rows.push([thaiMonths[m.month - 1], m.revenue.toFixed(2), m.cogs.toFixed(2), m.expenses.toFixed(2), m.grossProfit.toFixed(2), m.netProfit.toFixed(2), m.transactionCount])
+        })
+    }
+
+    const csv = rows.map(r => r.join(',')).join('\n')
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `tax_summary_${periodLabel}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
 }
 
 // ===== Backup & Export =====

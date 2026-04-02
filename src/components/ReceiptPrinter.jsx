@@ -40,8 +40,13 @@ export default function ReceiptPrinter({ transaction, shopSettings, ref }) {
                     <h2>{shopSettings?.shopName || 'ShopStock'}</h2>
                     {shopSettings?.shopAddress && <p>{shopSettings.shopAddress}</p>}
                     {shopSettings?.shopPhone && <p>Tel: {shopSettings.shopPhone}</p>}
+                    {shopSettings?.taxId && <p>เลขประจำตัวผู้เสียภาษี: {shopSettings.taxId}</p>}
                     <div className="receipt-divider"></div>
-                    <p>บิล: #{transaction.id?.slice(-6).toUpperCase()}</p>
+                    {transaction.invoiceNo ? (
+                        <p>เลขที่: {transaction.invoiceNo}</p>
+                    ) : (
+                        <p>บิล: #{transaction.id?.slice(-6).toUpperCase()}</p>
+                    )}
                     <p>วันที่: {formatDate(transaction.createdAt)}</p>
                     <p>พนักงาน: {transaction.staffName || 'System'}</p>
                 </div>
@@ -82,8 +87,14 @@ export default function ReceiptPrinter({ transaction, shopSettings, ref }) {
                                     <td className="right">-{transaction.discount?.toLocaleString()}</td>
                                 </tr>
                             )}
+                            {shopSettings?.vatEnabled && (
+                                <tr>
+                                    <td>รวม VAT {shopSettings.vatRate || 7}%</td>
+                                    <td className="right">{(transaction.total * (shopSettings.vatRate || 7) / (100 + (shopSettings.vatRate || 7))).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                                </tr>
+                            )}
                             <tr style={{ fontWeight: 'bold', fontSize: '14px' }}>
-                                <td>ยอดสุทธิ</td>
+                                <td>ยอดสุทธิ{shopSettings?.vatEnabled ? ' (รวม VAT)' : ''}</td>
                                 <td className="right">{transaction.total?.toLocaleString()}</td>
                             </tr>
                             <tr>

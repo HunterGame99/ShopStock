@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { getProducts, getTransactions, getProfitReport, getTopProducts, getSlowProducts, getReorderSuggestions, predictNextWeekSales, getLast7DaysData, exportData, importData, exportCSV, formatCurrency, formatNumber } from '../lib/storage.js'
+import { getProducts, getTransactions, getProfitReport, getTopProducts, getSlowProducts, getReorderSuggestions, predictNextWeekSales, getLast7DaysData, exportData, importData, exportCSV, formatCurrency, formatNumber, fetchCloudDailySummary, getTaxSummary, exportTaxCSV, getSettings, EXPENSE_CATEGORIES } from '../lib/storage.js'
 import { useToast } from '../App.jsx'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts'
 
@@ -14,6 +14,11 @@ export default function Reports() {
     const [reorderSuggestions, setReorderSuggestions] = useState([])
     const [prediction, setPrediction] = useState(0)
     const [last7Days, setLast7Days] = useState([])
+    const [cloudSummary, setCloudSummary] = useState(null)
+    const [loadingCloud, setLoadingCloud] = useState(false)
+    const [taxYear, setTaxYear] = useState(new Date().getFullYear())
+    const [taxMonth, setTaxMonth] = useState(0)
+    const [taxData, setTaxData] = useState(null)
 
     useEffect(() => {
         setProfitData(getProfitReport(period))
@@ -23,6 +28,23 @@ export default function Reports() {
         setPrediction(predictNextWeekSales())
         setLast7Days(getLast7DaysData())
     }, [period])
+
+    useEffect(() => {
+        if (tab === 'cloud') {
+            loadCloudSummary()
+        }
+        if (tab === 'tax') {
+            setTaxData(getTaxSummary(taxYear, taxMonth))
+        }
+    }, [tab, period, taxYear, taxMonth])
+
+    const loadCloudSummary = async () => {
+        setLoadingCloud(true)
+        const data = await fetchCloudDailySummary(period)
+        if (data) setCloudSummary(data)
+        setLoadingCloud(false)
+    }
+
 
     const handleExportBackup = () => {
         const data = exportData()
@@ -61,6 +83,8 @@ export default function Reports() {
         { key: 'profit', label: '💰 กำไร-ขาดทุน' },
         { key: 'ranking', label: '🏆 อันดับสินค้า' },
         { key: 'ai', label: '🧠 AI แนะนำ' },
+        { key: 'tax', label: '🏛️ สรุปภาษี' },
+        { key: 'cloud', label: '☁️ สรุป Cloud' },
         { key: 'backup', label: '💾 สำรองข้อมูล' },
     ]
 
@@ -86,8 +110,14 @@ export default function Reports() {
                     {[{ d: 7, l: '7 วัน' }, { d: 30, l: '30 วัน' }, { d: 90, l: '90 วัน' }].map(p => (
                         <button key={p.d} className={`btn btn-sm ${period === p.d ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setPeriod(p.d)}>{p.l}</button>
                     ))}
+                    {tab === 'cloud' && (
+                        <button className="btn btn-sm btn-ghost" onClick={loadCloudSummary} disabled={loadingCloud}>
+                            {loadingCloud ? '⏳ กำลังโหลด...' : '🔄 รีเฟรชข้อมูล'}
+                        </button>
+                    )}
                 </div>
             )}
+
 
             {/* === Profit Tab === */}
             {tab === 'profit' && profitData && (
@@ -304,6 +334,263 @@ export default function Reports() {
                         </div>
                     </div>
                 </>
+            )}
+
+            {/* === Tax Summary Tab === */}
+            {tab === 'tax' && (
+                <>
+                    {/* Year/Month selector */}
+                    <div style={{ display: 'flex', gap: 'var(--space-sm)', marginBottom: 'var(--space-lg)', flexWrap: 'wrap', alignItems: 'center' }}>
+                        <select className="form-control" value={taxYear} onChange={e => setTaxYear(Number(e.target.value))} style={{ width: 'auto', padding: '6px 12px' }}>
+                            {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i).map(y => (
+                                <option key={y} value={y}>{y + 543} ({y})</option>
+                            ))}
+                        </select>
+                        <select className="form-control" value={taxMonth} onChange={e => setTaxMonth(Number(e.target.value))} style={{ width: 'auto', padding: '6px 12px' }}>
+                            <option value={0}>ทั้งปี</option>
+                            {['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'].map((m, i) => (
+                                <option key={i + 1} value={i + 1}>{m}</option>
+                            ))}
+                        </select>
+                        <button className="btn btn-primary btn-sm" onClick={() => exportTaxCSV(taxYear, taxMonth)}>
+                            📥 Export CSV สำหรับยื่นภาษี
+                        </button>
+                    </div>
+
+                    {taxData && (
+                        <>
+                            {/* Tax ID info */}
+                            {(() => { const s = getSettings(); return s.taxId ? (
+                                <div style={{ marginBottom: 'var(--space-md)', padding: 'var(--space-sm) var(--space-md)', background: 'var(--bg-card)', borderRadius: 'var(--radius-md)', fontSize: 'var(--font-size-sm)', display: 'flex', gap: 'var(--space-md)' }}>
+                                    <span>🏪 <b>{s.shopName}</b></span>
+                                    <span>🏛️ Tax ID: <b>{s.taxId}</b></span>
+                                </div>
+                            ) : (
+                                <div style={{ marginBottom: 'var(--space-md)', padding: 'var(--space-sm) var(--space-md)', background: 'rgba(234,179,8,0.15)', borderRadius: 'var(--radius-md)', fontSize: 'var(--font-size-sm)', color: 'var(--warning)' }}>
+                                    ⚠️ ยังไม่ได้กรอกเลขประจำตัวผู้เสียภาษี — ไปตั้งค่าที่หน้า <b>ตั้งค่าระบบ</b>
+                                </div>
+                            )})()}
+
+                            {/* Summary Cards */}
+                            <div className="stat-cards">
+                                <div className="stat-card">
+                                    <div className="stat-card-icon green">💵</div>
+                                    <div className="stat-card-info">
+                                        <h3>รายได้รวม</h3>
+                                        <div className="stat-value">{formatCurrency(taxData.totalRevenue)}</div>
+                                        <div className="stat-sub">{taxData.transactionCount} บิล</div>
+                                    </div>
+                                </div>
+                                <div className="stat-card">
+                                    <div className="stat-card-icon red">📉</div>
+                                    <div className="stat-card-info">
+                                        <h3>ค่าใช้จ่ายรวม</h3>
+                                        <div className="stat-value">{formatCurrency(taxData.totalCOGS + taxData.totalExpenses)}</div>
+                                        <div className="stat-sub">ต้นทุน {formatCurrency(taxData.totalCOGS)} + ดำเนินงาน {formatCurrency(taxData.totalExpenses)}</div>
+                                    </div>
+                                </div>
+                                <div className="stat-card">
+                                    <div className="stat-card-icon blue">🧾</div>
+                                    <div className="stat-card-info">
+                                        <h3>กำไรสุทธิ (ก่อนภาษี)</h3>
+                                        <div className="stat-value" style={{ color: taxData.netProfit >= 0 ? 'var(--success)' : 'var(--danger)' }}>
+                                            {formatCurrency(taxData.netProfit)}
+                                        </div>
+                                        <div className="stat-sub">Margin {taxData.totalRevenue > 0 ? ((taxData.netProfit / taxData.totalRevenue) * 100).toFixed(1) : 0}%</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* VAT Section */}
+                            {(() => { const s = getSettings(); return s.vatEnabled ? (
+                                <div className="chart-container" style={{ marginTop: 'var(--space-lg)' }}>
+                                    <div className="chart-header">
+                                        <h3>🏛️ ภาษีมูลค่าเพิ่ม (VAT {s.vatRate || 7}%)</h3>
+                                    </div>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 'var(--space-md)', padding: 'var(--space-md)' }}>
+                                        <div style={{ padding: 'var(--space-md)', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)' }}>
+                                            <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)' }}>VAT ขาย (Output Tax)</div>
+                                            <div style={{ fontSize: 'var(--font-size-lg)', fontWeight: 700, color: 'var(--danger)' }}>{formatCurrency(taxData.vatOutput)}</div>
+                                        </div>
+                                        <div style={{ padding: 'var(--space-md)', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)' }}>
+                                            <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)' }}>VAT ซื้อ (Input Tax)</div>
+                                            <div style={{ fontSize: 'var(--font-size-lg)', fontWeight: 700, color: 'var(--success)' }}>{formatCurrency(taxData.vatInput)}</div>
+                                        </div>
+                                        <div style={{ padding: 'var(--space-md)', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)' }}>
+                                            <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)' }}>VAT ต้องนำส่ง</div>
+                                            <div style={{ fontSize: 'var(--font-size-lg)', fontWeight: 800, color: 'var(--accent-primary-hover)' }}>{formatCurrency(taxData.vatPayable)}</div>
+                                        </div>
+                                    </div>
+                                    <div style={{ padding: '0 var(--space-md) var(--space-md)', fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)' }}>
+                                        💡 VAT ขาย - VAT ซื้อ = ส่วนต่างที่ต้องนำส่งกรมสรรพากร (ยื่น ภ.พ.30 ทุกเดือน)
+                                    </div>
+                                </div>
+                            ) : null})()}
+
+                            {/* Expense by Category */}
+                            {Object.keys(taxData.expenseByCategory).length > 0 && (
+                                <div className="chart-container" style={{ marginTop: 'var(--space-lg)' }}>
+                                    <div className="chart-header">
+                                        <h3>📂 ค่าใช้จ่ายแยกหมวดหมู่</h3>
+                                        <span className="badge badge-info">นำไปหักค่าใช้จ่ายได้</span>
+                                    </div>
+                                    <div className="low-stock-list" style={{ padding: 'var(--space-md)' }}>
+                                        {Object.entries(taxData.expenseByCategory).sort((a, b) => b[1] - a[1]).map(([cat, amount]) => {
+                                            const catInfo = EXPENSE_CATEGORIES.find(c => c.name === cat)
+                                            return (
+                                                <div key={cat} className="low-stock-item">
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                        <span style={{ fontSize: '1.2rem' }}>{catInfo?.icon || '📁'}</span>
+                                                        <span style={{ fontWeight: 600 }}>{cat}</span>
+                                                    </div>
+                                                    <div style={{ fontWeight: 700, color: 'var(--danger)' }}>{formatCurrency(amount)}</div>
+                                                </div>
+                                            )
+                                        })}
+                                        <div className="low-stock-item" style={{ borderTop: '2px solid var(--border)', paddingTop: 'var(--space-sm)', marginTop: 'var(--space-sm)' }}>
+                                            <div style={{ fontWeight: 800 }}>รวมค่าใช้จ่ายดำเนินงาน</div>
+                                            <div style={{ fontWeight: 800, color: 'var(--danger)' }}>{formatCurrency(taxData.totalExpenses)}</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Monthly Breakdown (yearly view) */}
+                            {taxData.monthlyBreakdown.length > 0 && (
+                                <div className="chart-container" style={{ marginTop: 'var(--space-lg)' }}>
+                                    <div className="chart-header">
+                                        <h3>📅 สรุปรายเดือน ปี {taxYear + 543}</h3>
+                                    </div>
+                                    <div style={{ overflowX: 'auto' }}>
+                                        <table>
+                                            <thead>
+                                                <tr>
+                                                    <th>เดือน</th>
+                                                    <th>รายได้</th>
+                                                    <th>ต้นทุน</th>
+                                                    <th>ค่าใช้จ่าย</th>
+                                                    <th>กำไรสุทธิ</th>
+                                                    <th>บิล</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {taxData.monthlyBreakdown.map(m => {
+                                                    const mLabels = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.']
+                                                    return (
+                                                        <tr key={m.month} style={{ opacity: m.revenue === 0 && m.expenses === 0 ? 0.4 : 1 }}>
+                                                            <td style={{ fontWeight: 600 }}>{mLabels[m.month - 1]}</td>
+                                                            <td style={{ color: 'var(--success)' }}>{formatCurrency(m.revenue)}</td>
+                                                            <td>{formatCurrency(m.cogs)}</td>
+                                                            <td style={{ color: 'var(--danger)' }}>{formatCurrency(m.expenses)}</td>
+                                                            <td style={{ fontWeight: 700, color: m.netProfit >= 0 ? 'var(--success)' : 'var(--danger)' }}>
+                                                                {formatCurrency(m.netProfit)}
+                                                            </td>
+                                                            <td>{m.transactionCount}</td>
+                                                        </tr>
+                                                    )
+                                                })}
+                                                <tr style={{ borderTop: '2px solid var(--border)', fontWeight: 800 }}>
+                                                    <td>รวมทั้งปี</td>
+                                                    <td style={{ color: 'var(--success)' }}>{formatCurrency(taxData.totalRevenue)}</td>
+                                                    <td>{formatCurrency(taxData.totalCOGS)}</td>
+                                                    <td style={{ color: 'var(--danger)' }}>{formatCurrency(taxData.totalExpenses)}</td>
+                                                    <td style={{ color: taxData.netProfit >= 0 ? 'var(--success)' : 'var(--danger)' }}>
+                                                        {formatCurrency(taxData.netProfit)}
+                                                    </td>
+                                                    <td>{taxData.transactionCount}</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+
+                                    {/* Monthly chart */}
+                                    <div style={{ width: '100%', height: '280px', marginTop: 'var(--space-md)', padding: '0 var(--space-md) var(--space-md)' }}>
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <BarChart data={taxData.monthlyBreakdown.map(m => ({ ...m, label: ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'][m.month - 1] }))} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                                                <CartesianGrid strokeDasharray="3 3" stroke="#ffffff15" vertical={false} />
+                                                <XAxis dataKey="label" stroke="var(--text-muted)" fontSize={11} tickLine={false} axisLine={false} />
+                                                <YAxis stroke="var(--text-muted)" fontSize={11} tickLine={false} axisLine={false} tickFormatter={v => formatCurrency(v).replace('฿', '')} />
+                                                <Tooltip contentStyle={{ backgroundColor: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)' }} formatter={(v, n) => [formatCurrency(v), n === 'revenue' ? 'รายได้' : n === 'netProfit' ? 'กำไรสุทธิ' : 'ค่าใช้จ่าย']} />
+                                                <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '8px' }} />
+                                                <Bar dataKey="revenue" name="รายได้" fill="var(--accent-primary)" radius={[3, 3, 0, 0]} />
+                                                <Bar dataKey="netProfit" name="กำไรสุทธิ" fill="var(--success)" radius={[3, 3, 0, 0]} />
+                                            </BarChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Tax Tips */}
+                            <div className="chart-container" style={{ marginTop: 'var(--space-lg)' }}>
+                                <div className="chart-header"><h3>💡 เคล็ดลับภาษีสำหรับร้านค้า</h3></div>
+                                <div style={{ padding: 'var(--space-md)', fontSize: 'var(--font-size-sm)', color: 'var(--text-secondary)', lineHeight: 1.8 }}>
+                                    <div>📌 <b>ภ.ง.ด.90/91</b> — ยื่นภาษีเงินได้บุคคลธรรมดาภายใน <b>31 มี.ค.</b> ของทุกปี</div>
+                                    <div>📌 <b>ภ.พ.30</b> — ถ้าจด VAT ต้องยื่นภาษีมูลค่าเพิ่มภายใน <b>วันที่ 15 ของเดือนถัดไป</b></div>
+                                    <div>📌 <b>หักค่าใช้จ่าย</b> — เก็บใบเสร็จค่าใช้จ่ายทุกรายการเพื่อนำมาหักค่าใช้จ่ายตามจริง</div>
+                                    <div>📌 <b>Export CSV</b> — กดปุ่มด้านบนเพื่อส่งออกข้อมูลสรุป พร้อมส่งให้นักบัญชี/สรรพากร</div>
+                                </div>
+                            </div>
+                        </>
+                    )}
+                </>
+            )}
+
+            {/* === Cloud Summary Tab === */}
+            {tab === 'cloud' && (
+                <div className="chart-container">
+                    <div className="chart-header">
+                        <h3>☁️ สรุปรายวันจากเบื้องหลัง</h3>
+                        <span className="badge badge-purple">Supabase View</span>
+                    </div>
+
+                    <div style={{ padding: 'var(--space-md)' }}>
+                        <p style={{ color: 'var(--text-muted)', fontSize: 'var(--font-size-sm)', marginBottom: 'var(--space-lg)' }}>
+                            💡 ข้อมูลนี้ดึงตรงจาก <code>daily_summary</code> View โดยที่ Server จะเป็นฝ่ายคำนวณและสรุปยอดรวมของแต่ละวันให้โดยอัตโนมัติ ทำให้ไม่ต้องหน่วงเครื่อง Client! (อัปเดตเมื่อมีการ Sync ข้อมูลขึ้น Cloud)
+                        </p>
+
+                        {loadingCloud && !cloudSummary && (
+                            <div style={{ textAlign: 'center', padding: 'var(--space-xl)', color: 'var(--text-muted)' }}>
+                                ⏳ กำลังดึงข้อมูลจาก Cloud...
+                            </div>
+                        )}
+
+                        {!loadingCloud && cloudSummary && cloudSummary.length === 0 && (
+                            <div style={{ textAlign: 'center', padding: 'var(--space-xl)', color: 'var(--text-muted)' }}>
+                                <div style={{ fontSize: '2rem', marginBottom: '8px' }}>☁️</div>
+                                ยังไม่มีข้อมูลสรุปรายวันบน Cloud
+                            </div>
+                        )}
+
+                        {cloudSummary && cloudSummary.length > 0 && (
+                            <div style={{ overflowX: 'auto' }}>
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>วันที่</th>
+                                            <th>จำนวนบิล</th>
+                                            <th>รายรับรวม</th>
+                                            <th>รายจ่ายรวม</th>
+                                            <th>สุทธิ (Profit)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {cloudSummary.map((row, i) => (
+                                            <tr key={i}>
+                                                <td style={{ fontWeight: 600 }}>{new Date(row.date).toLocaleDateString('th-TH')}</td>
+                                                <td>{row.transactionCount || 0} รายการ</td>
+                                                <td style={{ color: 'var(--success)', fontWeight: 700 }}>{formatCurrency(row.revenue)}</td>
+                                                <td style={{ color: 'var(--danger)', fontWeight: 700 }}>{formatCurrency(row.expenses)}</td>
+                                                <td style={{ color: row.profit > 0 ? 'var(--accent-primary-hover)' : row.profit < 0 ? 'var(--danger)' : 'inherit', fontWeight: 800 }}>
+                                                    {formatCurrency(row.profit)}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+                </div>
             )}
 
             {/* === Backup Tab === */}

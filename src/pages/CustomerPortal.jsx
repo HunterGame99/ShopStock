@@ -14,6 +14,25 @@ export default function CustomerPortal() {
         setPromotions(getPromotions().filter(p => p.active))
     }, [])
 
+    // Auto-logout after 60 seconds of inactivity
+    useEffect(() => {
+        if (!customer) return
+        let timer = setTimeout(() => { setCustomer(null); setPhone('') }, 60000)
+        const resetTimer = () => {
+            clearTimeout(timer)
+            timer = setTimeout(() => { setCustomer(null); setPhone('') }, 60000)
+        }
+        window.addEventListener('touchstart', resetTimer)
+        window.addEventListener('click', resetTimer)
+        window.addEventListener('scroll', resetTimer)
+        return () => {
+            clearTimeout(timer)
+            window.removeEventListener('touchstart', resetTimer)
+            window.removeEventListener('click', resetTimer)
+            window.removeEventListener('scroll', resetTimer)
+        }
+    }, [customer])
+
     const handleSearch = (e) => {
         e.preventDefault()
         setLoading(true)
@@ -94,7 +113,7 @@ export default function CustomerPortal() {
                             <div style={{ color: 'var(--text-muted)', fontSize: 'var(--font-size-sm)' }}>{customer.phone}</div>
                         </div>
                     </div>
-                    <button className="btn btn-ghost btn-sm" onClick={() => setCustomer(null)}>ออกระบบ</button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => { setCustomer(null); setPhone('') }}>ออกระบบ</button>
                 </div>
 
                 {/* Points Card */}

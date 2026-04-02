@@ -250,3 +250,18 @@ export async function uploadProductImage(file) {
         return null
     }
 }
+
+// ===== Analytical Views =====
+export async function fetchCloudDailySummary(limit = 30) {
+    const { data, error } = await supabase
+        .from('daily_summary')
+        .select('*')
+        .order('date', { ascending: false })
+        .limit(limit)
+    
+    if (error) {
+        console.error('[Supabase] fetch daily_summary:', error.message)
+        return null
+    }
+    return toCamelArray(data)
+}

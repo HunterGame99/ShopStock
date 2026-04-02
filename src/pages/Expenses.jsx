@@ -5,7 +5,7 @@ import { useToast } from '../App.jsx'
 export default function Expenses() {
     const [expenses, setExpenses] = useState([])
     const [showAdd, setShowAdd] = useState(false)
-    const [newExpense, setNewExpense] = useState({ title: '', amount: '', category: 'จิปาถะ', note: '' })
+    const [newExpense, setNewExpense] = useState({ title: '', amount: '', category: 'จิปาถะ', note: '', receiptNo: '' })
     const toast = useToast()
 
     const reload = () => setExpenses(getExpenses())
@@ -19,7 +19,7 @@ export default function Expenses() {
         addExpense({ ...newExpense, amount: Number(newExpense.amount) })
         toast('บันทึกรายจ่ายแล้ว 💵')
         setShowAdd(false)
-        setNewExpense({ title: '', amount: '', category: 'จิปาถะ', note: '' })
+        setNewExpense({ title: '', amount: '', category: 'จิปาถะ', note: '', receiptNo: '' })
         reload()
     }
 
@@ -32,6 +32,12 @@ export default function Expenses() {
     }
 
     const totalExpenses = expenses.reduce((s, e) => s + e.amount, 0)
+    const now = new Date()
+    const thisMonthExp = expenses.filter(e => { const d = new Date(e.createdAt); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear() })
+    const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+    const lastMonthExp = expenses.filter(e => { const d = new Date(e.createdAt); return d.getMonth() === lastMonth.getMonth() && d.getFullYear() === lastMonth.getFullYear() })
+    const thisMonthTotal = thisMonthExp.reduce((s, e) => s + e.amount, 0)
+    const lastMonthTotal = lastMonthExp.reduce((s, e) => s + e.amount, 0)
 
     return (
         <div className="animate-in">
@@ -47,7 +53,23 @@ export default function Expenses() {
                 <div className="stat-card">
                     <div className="stat-card-icon red">📉</div>
                     <div className="stat-card-info">
-                        <h3>รายจ่ายรวมทั้งหมด</h3>
+                        <h3>เดือนนี้</h3>
+                        <div className="stat-value">{formatCurrency(thisMonthTotal)}</div>
+                        <div className="stat-sub">{thisMonthExp.length} รายการ</div>
+                    </div>
+                </div>
+                <div className="stat-card">
+                    <div className="stat-card-icon orange">📅</div>
+                    <div className="stat-card-info">
+                        <h3>เดือนก่อน</h3>
+                        <div className="stat-value">{formatCurrency(lastMonthTotal)}</div>
+                        <div className="stat-sub">{lastMonthExp.length} รายการ {thisMonthTotal > lastMonthTotal && lastMonthTotal > 0 ? <span style={{ color: 'var(--danger)' }}>▲ {((thisMonthTotal - lastMonthTotal) / lastMonthTotal * 100).toFixed(0)}%</span> : thisMonthTotal < lastMonthTotal ? <span style={{ color: 'var(--success)' }}>▼ {((lastMonthTotal - thisMonthTotal) / lastMonthTotal * 100).toFixed(0)}%</span> : ''}</div>
+                    </div>
+                </div>
+                <div className="stat-card">
+                    <div className="stat-card-icon purple">💰</div>
+                    <div className="stat-card-info">
+                        <h3>รวมทั้งหมด</h3>
                         <div className="stat-value">{formatCurrency(totalExpenses)}</div>
                         <div className="stat-sub">{expenses.length} รายการ</div>
                     </div>
@@ -68,6 +90,7 @@ export default function Expenses() {
                                 <th>หมวดหมู่</th>
                                 <th>รายการ</th>
                                 <th>จำนวนเงิน</th>
+                                <th>เลขที่ใบเสร็จ</th>
                                 <th>หมายเหตุ</th>
                                 <th></th>
                             </tr>
@@ -83,6 +106,7 @@ export default function Expenses() {
                                     </td>
                                     <td style={{ fontWeight: 600 }}>{e.title}</td>
                                     <td style={{ fontWeight: 700, color: 'var(--danger)' }}>{formatCurrency(e.amount)}</td>
+                                    <td style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)' }}>{e.receiptNo || '-'}</td>
                                     <td style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)' }}>{e.note}</td>
                                     <td style={{ textAlign: 'right' }}>
                                         <button className="btn btn-ghost btn-sm" onClick={() => handleDelete(e.id)} style={{ color: 'var(--danger)' }}>🗑️</button>
@@ -117,6 +141,10 @@ export default function Expenses() {
                                         <option key={cat.name} value={cat.name}>{cat.icon} {cat.name}</option>
                                     ))}
                                 </select>
+                            </div>
+                            <div className="form-group">
+                                <label>เลขที่ใบเสร็จ / เอกสารอ้างอิง</label>
+                                <input className="form-control" type="text" value={newExpense.receiptNo} onChange={e => setNewExpense({ ...newExpense, receiptNo: e.target.value })} placeholder="เช่น INV-2025-001 (สำหรับหักภาษี)" />
                             </div>
                             <div className="form-group">
                                 <label>หมายเหตุ</label>

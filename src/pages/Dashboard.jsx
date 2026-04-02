@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { getProducts, getTransactions, getTodaySales, getLowStockProducts, getTotalStockValue, getTotalRetailValue, formatCurrency, formatNumber, formatDate, getTodayRevenue, getTodayProfit, getTodayExpenses, getRevenueTrend, getTopProducts, getSlowProducts, getLast7DaysData, getTodayTarget, setDailyTarget, getWeekComparison, getExpiringProducts, getNotifications } from '../lib/storage.js'
 import { useToast, useAuth } from '../App.jsx'
 import { canSeeProfit, canAccessPage } from '../lib/permissions.js'
+import { Link } from 'react-router-dom'
 import AIAssistant from '../components/AIAssistant.jsx'
 
 export default function Dashboard() {
@@ -169,6 +170,27 @@ export default function Dashboard() {
                 </div>
             )}
 
+            {/* Quick Actions */}
+            <div style={{ display: 'flex', gap: 'var(--space-sm)', marginBottom: 'var(--space-lg)', flexWrap: 'wrap' }}>
+                {[
+                    { to: '/stock-out', icon: '🛒', label: 'ขายสินค้า', color: 'var(--success)' },
+                    { to: '/stock-in', icon: '📥', label: 'รับเข้าสต็อก', color: 'var(--info)' },
+                    { to: '/expenses', icon: '📉', label: 'บันทึกรายจ่าย', color: 'var(--danger)', admin: true },
+                    { to: '/history', icon: '📋', label: 'ดูประวัติ', color: 'var(--warning)' },
+                    { to: '/reports', icon: '🧠', label: 'รายงาน & AI', color: 'var(--accent-primary)', admin: true },
+                ].filter(a => !a.admin || canAccessPage(role, a.to)).map(a => (
+                    <Link key={a.to} to={a.to} style={{ textDecoration: 'none', flex: '1 1 120px', minWidth: '100px' }}>
+                        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '10px 12px', textAlign: 'center', transition: 'all 0.15s', cursor: 'pointer' }}
+                            onMouseEnter={e => e.currentTarget.style.borderColor = a.color}
+                            onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border)'}
+                        >
+                            <div style={{ fontSize: '1.4rem' }}>{a.icon}</div>
+                            <div style={{ fontSize: 'var(--font-size-xs)', fontWeight: 600, color: 'var(--text-primary)', marginTop: '2px' }}>{a.label}</div>
+                        </div>
+                    </Link>
+                ))}
+            </div>
+
             {/* Charts */}
             <div className="dashboard-grid">
                 <div className="chart-container">
@@ -208,6 +230,64 @@ export default function Dashboard() {
                     )}
                 </div>
             </div>
+
+            {/* Week Comparison */}
+            {canSeeProfit(role) && data.weekComp && (
+                <div className="chart-container" style={{ marginTop: 'var(--space-lg)' }}>
+                    <div className="chart-header">
+                        <h3>📊 เปรียบเทียบสัปดาห์</h3>
+                        <span className="badge badge-info">สัปดาห์นี้ vs สัปดาห์ก่อน</span>
+                    </div>
+                    <div style={{ overflowX: 'auto' }}>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>วัน</th>
+                                    {data.weekComp.thisWeek.map((d, i) => (
+                                        <th key={i} style={{ textAlign: 'center', fontSize: 'var(--font-size-xs)' }}>{d.label}</th>
+                                    ))}
+                                    <th style={{ textAlign: 'center', fontWeight: 800 }}>รวม</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>สัปดาห์นี้</td>
+                                    {data.weekComp.thisWeek.map((d, i) => (
+                                        <td key={i} style={{ textAlign: 'center', fontWeight: 700, color: 'var(--accent-primary-hover)' }}>{d.revenue > 0 ? formatCurrency(d.revenue) : '-'}</td>
+                                    ))}
+                                    <td style={{ textAlign: 'center', fontWeight: 800, color: 'var(--accent-primary-hover)' }}>{formatCurrency(data.weekComp.thisWeek.reduce((s, d) => s + d.revenue, 0))}</td>
+                                </tr>
+                                <tr>
+                                    <td style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>สัปดาห์ก่อน</td>
+                                    {data.weekComp.lastWeek.map((d, i) => (
+                                        <td key={i} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>{d.revenue > 0 ? formatCurrency(d.revenue) : '-'}</td>
+                                    ))}
+                                    <td style={{ textAlign: 'center', fontWeight: 700, color: 'var(--text-muted)' }}>{formatCurrency(data.weekComp.lastWeek.reduce((s, d) => s + d.revenue, 0))}</td>
+                                </tr>
+                                <tr style={{ borderTop: '2px solid var(--border)' }}>
+                                    <td style={{ fontWeight: 700 }}>ผลต่าง</td>
+                                    {data.weekComp.thisWeek.map((d, i) => {
+                                        const diff = d.revenue - data.weekComp.lastWeek[i].revenue
+                                        return (
+                                            <td key={i} style={{ textAlign: 'center', fontWeight: 700, color: diff > 0 ? 'var(--success)' : diff < 0 ? 'var(--danger)' : 'var(--text-muted)' }}>
+                                                {diff === 0 ? '-' : (diff > 0 ? '+' : '') + formatCurrency(diff)}
+                                            </td>
+                                        )
+                                    })}
+                                    {(() => {
+                                        const totalDiff = data.weekComp.thisWeek.reduce((s, d) => s + d.revenue, 0) - data.weekComp.lastWeek.reduce((s, d) => s + d.revenue, 0)
+                                        return (
+                                            <td style={{ textAlign: 'center', fontWeight: 800, color: totalDiff > 0 ? 'var(--success)' : totalDiff < 0 ? 'var(--danger)' : 'var(--text-muted)' }}>
+                                                {totalDiff === 0 ? '-' : (totalDiff > 0 ? '+' : '') + formatCurrency(totalDiff)}
+                                            </td>
+                                        )
+                                    })()}
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            )}
 
             {/* Row 2: Low Stock + Expiring */}
             <div className="dashboard-grid" style={{ marginTop: 'var(--space-lg)' }}>

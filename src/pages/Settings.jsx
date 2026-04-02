@@ -8,9 +8,12 @@ export default function Settings() {
         shopName: 'ShopStock',
         shopAddress: '',
         shopPhone: '',
+        taxId: '',
         receiptFooter: 'ขอบคุณที่ใช้บริการ ❤️',
         vatEnabled: false,
         vatRate: 7,
+        invoicePrefix: 'INV',
+        invoiceNextNumber: 1,
         theme: 'dark',
         telegramBotToken: '',
         telegramChatId: '',
@@ -99,6 +102,11 @@ export default function Settings() {
                         <input className="form-control" type="text" value={settings.shopPhone} onChange={e => setSettings({ ...settings, shopPhone: e.target.value })} placeholder="08x-xxx-xxxx" />
                     </div>
                     <div className="form-group">
+                        <label>เลขประจำตัวผู้เสียภาษี (Tax ID)</label>
+                        <input className="form-control" type="text" value={settings.taxId || ''} onChange={e => setSettings({ ...settings, taxId: e.target.value })} placeholder="เลข 13 หลัก เช่น 0-1234-56789-01-2" maxLength="17" />
+                        <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)', marginTop: '4px' }}>จะแสดงในใบเสร็จ/ใบกำกับภาษี และใช้สำหรับยื่นภาษี</div>
+                    </div>
+                    <div className="form-group">
                         <label>ข้อความท้ายใบเสร็จ</label>
                         <input className="form-control" type="text" value={settings.receiptFooter} onChange={e => setSettings({ ...settings, receiptFooter: e.target.value })} />
                     </div>
@@ -113,6 +121,22 @@ export default function Settings() {
                                 <span>%</span>
                             </div>
                         )}
+                    </div>
+                    <div style={{ marginTop: 'var(--space-md)', padding: 'var(--space-md)', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)' }}>
+                        <div style={{ fontSize: 'var(--font-size-sm)', fontWeight: 700, marginBottom: 'var(--space-sm)', color: 'var(--text-primary)' }}>🧾 ระบบเลขที่ใบเสร็จ</div>
+                        <div style={{ display: 'flex', gap: 'var(--space-sm)', alignItems: 'flex-end' }}>
+                            <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
+                                <label style={{ fontSize: 'var(--font-size-xs)' }}>คำนำหน้า (Prefix)</label>
+                                <input className="form-control" type="text" value={settings.invoicePrefix || 'INV'} onChange={e => setSettings({ ...settings, invoicePrefix: e.target.value })} placeholder="INV" style={{ padding: '4px 8px' }} />
+                            </div>
+                            <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
+                                <label style={{ fontSize: 'var(--font-size-xs)' }}>เลขถัดไป</label>
+                                <input className="form-control" type="number" value={settings.invoiceNextNumber || 1} onChange={e => setSettings({ ...settings, invoiceNextNumber: Number(e.target.value) })} style={{ padding: '4px 8px' }} min="1" />
+                            </div>
+                        </div>
+                        <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)', marginTop: '6px' }}>
+                            ตัวอย่าง: {settings.invoicePrefix || 'INV'}-{String(settings.invoiceNextNumber || 1).padStart(6, '0')} (รันอัตโนมัติเมื่อขายเสร็จ)
+                        </div>
                     </div>
                     <div className="form-group" style={{ marginTop: 'var(--space-md)' }}>
                         <label>Telegram Bot Token</label>

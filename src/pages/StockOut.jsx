@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback } from 'react'
-import { getProducts, addTransaction, getCustomers, formatCurrency, formatDate, playSound, getTopProducts, getCategoryEmoji, applyPromotions, getPromotions, CATEGORIES, holdBill, getHeldBills, resumeBill, deleteHeldBill, getRecentSales, addCredit, getUnpaidCredits, getSettings, redeemPoints } from '../lib/storage.js'
+import { getProducts, addTransaction, getCustomers, formatCurrency, formatDate, playSound, getTopProducts, getCategoryEmoji, applyPromotions, getPromotions, CATEGORIES, holdBill, getHeldBills, resumeBill, deleteHeldBill, getRecentSales, addCredit, getUnpaidCredits, getSettings, redeemPoints, generateInvoiceNumber } from '../lib/storage.js'
 import { useToast, useShift } from '../App.jsx'
 import BarcodeScanner from '../components/BarcodeScanner.jsx'
 import ReceiptPrinter from '../components/ReceiptPrinter.jsx'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 
 export default function StockOut() {
+    const navigate = useNavigate()
     const { activeShift } = useShift()
     const [products, setProducts] = useState([])
     const [search, setSearch] = useState('')
@@ -50,17 +51,19 @@ export default function StockOut() {
     }
     useEffect(() => { reload() }, [])
 
-    // BroadcastChannel for Customer Display
+    // BroadcastChannel for Customer Display — keep open for the lifetime of POS
+    const [posChannel] = useState(() => new BroadcastChannel('shopstock_pos_channel'));
+    useEffect(() => { return () => posChannel.close() }, []);
     useEffect(() => {
-        const channel = new BroadcastChannel('shopstock_pos_channel');
-        if (showReceipt) {
-            channel.postMessage({ type: 'PAYMENT_COMPLETE', details: showReceipt });
-        } else if (cart.length === 0) {
-            channel.postMessage({ type: 'CLEAR' });
-        } else {
-            channel.postMessage({ type: 'CART_UPDATE', cart });
-        }
-        return () => channel.close();
+        try {
+            if (showReceipt) {
+                posChannel.postMessage({ type: 'PAYMENT_COMPLETE', details: showReceipt });
+            } else if (cart.length === 0) {
+                posChannel.postMessage({ type: 'CLEAR' });
+            } else {
+                posChannel.postMessage({ type: 'CART_UPDATE', cart });
+            }
+        } catch (e) { /* channel closed */ }
     }, [cart, showReceipt]);
 
     useEffect(() => { setPromoDiscount(cart.length > 0 ? applyPromotions(cart) : 0) }, [cart])
@@ -102,7 +105,7 @@ export default function StockOut() {
     })
 
     const addToCart = useCallback((product) => {
-        if (!activeShift) { toast('กรุณาเปิดกะก่อนขายสินค้า', 'error'); return }
+        if (!activeShift) { toast('กรุณาเปิดกะก่อนขายสินค้า', 'error'); navigate('/shifts'); return }
         if (product.stock <= 0) { toast('สินค้าหมดสต็อก', 'error'); playSound('error'); return }
         setCart(prev => {
             const existing = prev.find(c => c.productId === product.id)
@@ -168,10 +171,11 @@ export default function StockOut() {
     const handleCreditSale = () => {
         if (!selectedCustomer) { toast('เลือกลูกค้าก่อนขายเชื่อ', 'error'); return }
         if (cart.length === 0) { toast('เพิ่มสินค้า', 'error'); return }
+        const invoiceNo = generateInvoiceNumber()
         const tx = addTransaction({
             type: 'out', items: cart.map(c => ({ productId: c.productId, productName: c.productName, qty: c.qty, price: c.price })),
             total: cartTotal, subtotal, discount: totalDiscount, payment: 0,
-            change: 0, paymentMethod: 'credit', customerId: selectedCustomer, note: 'เงินเชื่อ',
+            change: 0, paymentMethod: 'credit', customerId: selectedCustomer, note: 'เงินเชื่อ', invoiceNo,
         })
         addCredit(selectedCustomer, cartTotal, cart.map(c => ({ productName: c.productName, qty: c.qty, price: c.price })), `บิล #${tx.id.slice(-6)}`)
         playSound('success')
@@ -181,7 +185,7 @@ export default function StockOut() {
     }
 
     const handleCheckout = () => {
-        if (!activeShift) { toast('กรุณาเปิดกะก่อนขายสินค้า', 'error'); return }
+        if (!activeShift) { toast('กรุณาเปิดกะก่อนขายสินค้า', 'error'); navigate('/shifts'); return }
         if (cart.length === 0) { toast('เพิ่มสินค้า', 'error'); return }
         setPayment(paymentMethod === 'cash' ? '' : cartTotal.toString())
         setShowCheckout(true)
@@ -190,11 +194,12 @@ export default function StockOut() {
     const confirmCheckout = () => {
         const payAmount = Number(payment)
         if (paymentMethod === 'cash' && payAmount < cartTotal) { toast('เงินไม่พอ', 'error'); return }
+        const invoiceNo = generateInvoiceNumber()
         const tx = addTransaction({
             type: 'out', items: cart.map(c => ({ productId: c.productId, productName: c.productName, qty: c.qty, price: c.price })),
             total: cartTotal, subtotal, discount: totalDiscount, payment: payAmount,
             change: paymentMethod === 'cash' ? payAmount - cartTotal : 0, paymentMethod,
-            customerId: selectedCustomer || null, note: '',
+            customerId: selectedCustomer || null, note: '', invoiceNo,
         })
         // Redeem points if used
         if (pointsUsed > 0 && selectedCustomer) {
@@ -453,7 +458,7 @@ export default function StockOut() {
                                     </div>
                                     {payment && <div className={`change-display ${Number(payment) < cartTotal ? 'insufficient' : ''}`}><div className="change-label">{Number(payment) >= cartTotal ? '💰 เงินทอน' : '⚠️ เงินไม่พอ'}</div><div className="change-amount">{Number(payment) >= cartTotal ? formatCurrency(change) : `ขาดอีก ${formatCurrency(cartTotal - Number(payment))}`}</div></div>}
                                     <div style={{ display: 'flex', gap: 'var(--space-sm)', marginTop: 'var(--space-md)', flexWrap: 'wrap' }}>
-                                        {[cartTotal, 20, 50, 100, 500, 1000].map(a => (
+                                        {[cartTotal, 20, 50, 100, 200, 500, 1000].map(a => (
                                             <button key={a} className="btn btn-secondary btn-sm" onClick={() => setPayment(a.toString())}>{a === cartTotal ? '💵 พอดี' : formatCurrency(a)}</button>
                                         ))}
                                     </div>
@@ -478,7 +483,8 @@ export default function StockOut() {
                                 <h4>🏪 {settings.shopName || 'ShopStock'}</h4>
                                 {settings.shopAddress && <div style={{ textAlign: 'center', fontSize: '10px', whiteSpace: 'pre-wrap' }}>{settings.shopAddress}</div>}
                                 {settings.shopPhone && <div style={{ textAlign: 'center', fontSize: '10px' }}>โทร: {settings.shopPhone}</div>}
-                                <div style={{ textAlign: 'center', fontSize: '10px' }}>Bill #{showReceipt.id.slice(-6).toUpperCase()}</div>
+                                <div style={{ textAlign: 'center', fontSize: '10px' }}>{showReceipt.invoiceNo || `Bill #${showReceipt.id.slice(-6).toUpperCase()}`}</div>
+                                {settings.taxId && <div style={{ textAlign: 'center', fontSize: '9px', color: '#999' }}>เลขผู้เสียภาษี: {settings.taxId}</div>}
                                 <div style={{ textAlign: 'center', fontSize: '10px', marginBottom: '8px' }}>{new Date(showReceipt.createdAt).toLocaleString('th-TH')}</div>
                                 <div className="receipt-line" />
                                 {showReceipt.items.map((item, i) => (<div key={i} className="receipt-row"><span>{item.productName} ×{item.qty}</span><span>{formatCurrency(item.qty * item.price)}</span></div>))}

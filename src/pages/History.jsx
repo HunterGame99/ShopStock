@@ -113,6 +113,9 @@ export default function History() {
                             <button className={`btn btn-sm ${viewMode === 'all' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setViewMode('all')}>ทั้งหมด</button>
                             <button className={`btn btn-sm ${viewMode === 'daily' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setViewMode('daily')}>รายวัน</button>
                         </div>
+                        {(filterType || filterDate || search) && (
+                            <button className="btn btn-ghost btn-sm" onClick={() => { setFilterType(''); setFilterDate(''); setSearch('') }} style={{ color: 'var(--danger)' }}>✕ ล้างตัวกรอง</button>
+                        )}
                         <button className="btn btn-secondary btn-sm" onClick={handleExport}>📁 Export CSV</button>
                     </div>
                 </div>
@@ -143,12 +146,13 @@ export default function History() {
                         <div className="table-empty"><div className="empty-icon">📋</div><p>ไม่พบรายการ</p></div>
                     ) : (
                         <table>
-                            <thead><tr><th>วันที่</th><th>ประเภท</th><th>รายการ</th><th>จำนวน</th><th>มูลค่า</th><th>กำไร</th><th></th></tr></thead>
+                            <thead><tr><th>วันที่</th><th>เลขที่</th><th>ประเภท</th><th>รายการ</th><th>จำนวน</th><th>มูลค่า</th><th>กำไร</th><th></th></tr></thead>
                             <tbody>
                                 {filtered.map(tx => (
                                     <Fragment key={tx.id}>
                                         <tr key={tx.id} onClick={() => setExpanded(expanded === tx.id ? null : tx.id)} style={{ cursor: 'pointer' }}>
                                             <td style={{ whiteSpace: 'nowrap' }}>{formatDate(tx.createdAt)}</td>
+                                            <td style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{tx.invoiceNo || `#${tx.id?.slice(-6).toUpperCase()}`}</td>
                                             <td>
                                                 <span className={`badge ${tx.type === 'in' ? 'badge-info' : tx.type === 'refund' ? 'badge-warning' : tx.refunded ? 'badge-danger' : 'badge-success'}`}>
                                                     {tx.type === 'in' ? '📥 นำเข้า' : tx.type === 'refund' ? '↩️ คืน' : '🛒 ขาย'}
@@ -173,7 +177,7 @@ export default function History() {
                                         </tr>
                                         {expanded === tx.id && (
                                             <tr key={tx.id + '-detail'}>
-                                                <td colSpan="7" style={{ padding: 'var(--space-md)', background: 'var(--bg-primary)' }}>
+                                                <td colSpan="8" style={{ padding: 'var(--space-md)', background: 'var(--bg-primary)' }}>
                                                     {tx.items.map((item, i) => (
                                                         <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: i < tx.items.length - 1 ? '1px solid var(--border)' : 'none' }}>
                                                             <span>{item.productName} ×{item.qty}</span>

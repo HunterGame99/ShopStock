@@ -1,125 +1,129 @@
-import { useState, useEffect } from 'react'
-import { getTopProducts, getSlowProducts, predictNextWeekSales, getReorderSuggestions, formatCurrency, getCategoryEmoji } from '../lib/storage.js'
+import { useState, useEffect, useRef } from 'react'
+import { isAIAvailable, initAIChat, sendMessageToAI } from '../lib/aiService.js'
 
 export default function AIAssistant() {
-    const [insights, setInsights] = useState(null)
-    const [loading, setLoading] = useState(true)
-
-    const analyzeData = () => {
-        setLoading(true)
-        // Simulate "thinking" for dramatic effect
-        setTimeout(() => {
-            const top = getTopProducts(14, 3) // Last 14 days, top 3
-            const dying = getSlowProducts(14).slice(0, 3) // Dead stock in last 14 days
-            const prediction = predictNextWeekSales()
-            const reorder = getReorderSuggestions().slice(0, 3)
-
-            setInsights({ top, dying, prediction, reorder })
-            setLoading(false)
-        }, 1500)
-    }
+    const [messages, setMessages] = useState([
+        { role: 'ai', text: 'สวัสดีครับ! ผมคือผู้จัดการ AI ประจำ ShopStock 🤖\nคุณมีคำถาม หรืออยากให้ผมช่วยวิเคราะห์ข้อมูลส่วนไหนเป็นพิเศษไหมครับ?' }
+    ])
+    const [input, setInput] = useState('')
+    const [loading, setLoading] = useState(false)
+    const [isAvailable, setIsAvailable] = useState(true)
+    const messagesEndRef = useRef(null)
 
     useEffect(() => {
-        analyzeData()
+        // Check if API key is set
+        const available = isAIAvailable()
+        setIsAvailable(available)
+
+        if (available) {
+            initAIChat()
+        }
     }, [])
 
+    useEffect(() => {
+        // Scroll to bottom when messages change
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }, [messages])
+
+    const handleSend = async () => {
+        if (!input.trim() || !isAvailable || loading) return
+
+        const userMsg = input.trim()
+        setInput('')
+        setMessages(prev => [...prev, { role: 'user', text: userMsg }])
+        setLoading(true)
+
+        const responseText = await sendMessageToAI(userMsg)
+
+        setMessages(prev => [...prev, { role: 'ai', text: responseText }])
+        setLoading(false)
+    }
+
+    const handleKeyPress = (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault()
+            handleSend()
+        }
+    }
+
+    if (!isAvailable) {
+        return (
+            <div className="chart-container" style={{ border: '1px solid var(--danger)', background: 'var(--danger-bg)' }}>
+                <div className="chart-header" style={{ borderBottom: '1px solid rgba(239, 68, 68, 0.2)', paddingBottom: 'var(--space-md)' }}>
+                    <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--danger)' }}>
+                        ⚠️ AI ไม่พร้อมใช้งาน (Missing API Key)
+                    </h3>
+                </div>
+                <div style={{ padding: 'var(--space-md)', fontSize: 'var(--font-size-sm)', color: 'var(--text-primary)' }}>
+                    <p style={{ marginBottom: '8px' }}>คุณยังไม่ได้ตั้งค่า Google Gemini API Key ในแอปพลิเคชัน</p>
+                    <ol style={{ paddingLeft: '20px', marginBottom: '8px', color: 'var(--text-muted)' }}>
+                        <li>ไปที่ไฟล์ <code>.env</code> (หรือ <code>.env.example</code>)</li>
+                        <li>ใส่ค่าคีย์ของคุณลงใน <code>VITE_GEMINI_API_KEY=AIzaSy...</code></li>
+                        <li>หากรันอยู่ ให้ Restart เซิร์ฟเวอร์ (npm run dev) ใหม่</li>
+                    </ol>
+                    <p style={{ fontSize: '12px', opacity: 0.8 }}>Note: สำหรับการ Deploy บน Vercel ให้ไปตั้งค่าในหมวด Environment Variables</p>
+                </div>
+            </div>
+        )
+    }
+
     return (
-        <div className="chart-container" style={{ position: 'relative', overflow: 'hidden', border: '1px solid rgba(139, 92, 246, 0.3)', background: 'linear-gradient(145deg, var(--bg-card) 0%, rgba(139, 92, 246, 0.05) 100%)' }}>
-            <div className="chart-header" style={{ borderBottom: '1px solid rgba(139, 92, 246, 0.1)', paddingBottom: 'var(--space-md)' }}>
+        <div className="chart-container" style={{ display: 'flex', flexDirection: 'column', height: '500px', border: '1px solid rgba(139, 92, 246, 0.3)', background: 'var(--bg-card)' }}>
+            <div className="chart-header" style={{ borderBottom: '1px solid rgba(139, 92, 246, 0.1)', paddingBottom: 'var(--space-sm)', flexShrink: 0 }}>
                 <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--accent-primary-hover)' }}>
-                    ✨ AI Business Insights
-                    <span className="badge badge-purple" style={{ fontSize: '0.6rem' }}>BETA</span>
+                    ✨ ShopStock AI Manager
+                    <span className="badge badge-purple" style={{ fontSize: '0.6rem' }}>Gemini 1.5</span>
                 </h3>
-                <button className="btn btn-ghost btn-sm" onClick={analyzeData} disabled={loading} style={{ color: 'var(--accent-primary)' }}>
-                    {loading ? '⏳ กำลังวิเคราะห์...' : '🔄 อัปเดต'}
-                </button>
             </div>
 
-            <div style={{ padding: 'var(--space-md) 0' }}>
-                {loading ? (
-                    <div style={{ textAlign: 'center', padding: 'var(--space-xl)', color: 'var(--accent-primary)', opacity: 0.7 }}>
-                        <div className="animate-spin" style={{ fontSize: '2rem', marginBottom: 'var(--space-sm)' }}>🧠</div>
-                        <p style={{ fontSize: 'var(--font-size-sm)' }}>กำลังวิเคราะห์ยอดขายและพฤติกรรมลูกค้า...</p>
+            {/* Chat History */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: 'var(--space-md)', display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+                {messages.map((msg, i) => (
+                    <div key={i} style={{
+                        alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start',
+                        maxWidth: '85%',
+                        background: msg.role === 'user' ? 'var(--accent-primary)' : 'var(--bg-secondary)',
+                        color: msg.role === 'user' ? 'white' : 'var(--text-primary)',
+                        padding: '12px 16px',
+                        borderRadius: msg.role === 'user' ? '16px 16px 0 16px' : '16px 16px 16px 0',
+                        fontSize: 'var(--font-size-sm)',
+                        lineHeight: 1.5,
+                        boxShadow: '0 2px 5px rgba(0,0,0,0.1)',
+                        border: msg.role === 'ai' ? '1px solid var(--border)' : 'none',
+                        whiteSpace: 'pre-wrap' // Important for AI formatting
+                    }}>
+                        {msg.text}
                     </div>
-                ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-lg)' }}>
-
-                        {/* 1. Prediction */}
-                        <div style={{ display: 'flex', gap: 'var(--space-sm)', alignItems: 'flex-start' }}>
-                            <div style={{ fontSize: '1.5rem' }}>🔮</div>
-                            <div>
-                                <div style={{ fontWeight: 700, marginBottom: '2px' }}>แนวโน้มยอดขายสัปดาห์หน้า</div>
-                                <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--text-muted)' }}>
-                                    ระบบ AI คาดการณ์ว่าสัปดาห์หน้าคุณจะมียอดขายประมาณ <strong style={{ color: 'var(--accent-primary-hover)' }}>{formatCurrency(insights.prediction)}</strong>
-                                    (อ้างอิงจากเทรนด์การขาย 14 วันย้อนหลัง)
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* 2. Top Performers */}
-                        <div style={{ display: 'flex', gap: 'var(--space-sm)', alignItems: 'flex-start' }}>
-                            <div style={{ fontSize: '1.5rem' }}>🔥</div>
-                            <div style={{ width: '100%' }}>
-                                <div style={{ fontWeight: 700, marginBottom: '2px' }}>สินค้าดาวรุ่ง (14 วันล่าสุด)</div>
-                                {insights.top.length === 0 ? (
-                                    <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--text-muted)' }}>ยังไม่มีข้อมูลการขายเพียงพอ</div>
-                                ) : (
-                                    <div style={{ display: 'flex', gap: 'var(--space-sm)', marginTop: '8px', overflowX: 'auto', paddingBottom: '4px' }}>
-                                        {insights.top.map((p, i) => (
-                                            <div key={p.id} style={{ minWidth: '120px', background: 'var(--bg-secondary)', padding: 'var(--space-sm)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
-                                                <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--warning)', fontWeight: 800 }}>#{i + 1} ยอดฮิต</div>
-                                                <div style={{ fontWeight: 600, fontSize: 'var(--font-size-sm)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</div>
-                                                <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)' }}>ขายได้ {p.qty} ชิ้น</div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-
-                        {/* 3. Dead Stock Alert */}
-                        {insights.dying.length > 0 && (
-                            <div style={{ display: 'flex', gap: 'var(--space-sm)', alignItems: 'flex-start' }}>
-                                <div style={{ fontSize: '1.5rem' }}>🧊</div>
-                                <div style={{ width: '100%' }}>
-                                    <div style={{ fontWeight: 700, marginBottom: '2px' }}>สินค้าค้างสต็อก (ขายไม่ออกเกิน 14 วัน)</div>
-                                    <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--text-muted)' }}>พิจารณาจัดโปรโมชั่น หรือลดราคาเพื่อระบายสต็อก:</div>
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '6px' }}>
-                                        {insights.dying.map(p => (
-                                            <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--font-size-sm)', background: 'var(--danger-bg)', color: 'var(--danger)', padding: '4px 8px', borderRadius: '4px' }}>
-                                                <span>{p.emoji || getCategoryEmoji(p.category)} {p.name}</span>
-                                                <span style={{ fontWeight: 700 }}>เหลือ {p.stock} ชิ้น</span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* 4. Reorder Suggestions */}
-                        {insights.reorder.length > 0 && (
-                            <div style={{ display: 'flex', gap: 'var(--space-sm)', alignItems: 'flex-start' }}>
-                                <div style={{ fontSize: '1.5rem' }}>🛒</div>
-                                <div style={{ width: '100%' }}>
-                                    <div style={{ fontWeight: 700, marginBottom: '2px' }}>แนะนำให้สั่งซื้อเพิ่มด่วน</div>
-                                    <ul style={{ margin: 0, paddingLeft: '20px', fontSize: 'var(--font-size-sm)', color: 'var(--text-muted)' }}>
-                                        {insights.reorder.map(p => (
-                                            <li key={p.id} style={{ marginBottom: '4px' }}>
-                                                <strong>{p.name}</strong>
-                                                <span style={{ opacity: 0.8 }}> - ควรพรีออเดอร์เพิ่ม {p.suggestedOrder} ชิ้น
-                                                    <span style={{ color: 'var(--warning)', marginLeft: '4px' }}>(อาจจะหมดภายใน {p.daysUntilEmpty} วัน)</span></span>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                </div>
-                            </div>
-                        )}
-
+                ))}
+                {loading && (
+                    <div style={{ alignSelf: 'flex-start', background: 'var(--bg-secondary)', padding: '12px 16px', borderRadius: '16px 16px 16px 0', border: '1px solid var(--border)', fontSize: 'var(--font-size-sm)' }}>
+                        <span className="animate-pulse">กำลังคิด... 🤔</span>
                     </div>
                 )}
+                <div ref={messagesEndRef} />
             </div>
-            {/* Background decoration */}
-            <div style={{ position: 'absolute', right: '-30px', bottom: '-40px', fontSize: '10rem', opacity: 0.03, pointerEvents: 'none' }}>✨</div>
+
+            {/* Chat Input */}
+            <div style={{ padding: 'var(--space-md)', borderTop: '1px solid var(--border)', flexShrink: 0, display: 'flex', gap: 'var(--space-sm)' }}>
+                <input
+                    type="text"
+                    className="form-control"
+                    placeholder="พิมพ์ถาม AI (เช่น สินค้าไหนใกล้หมดสต็อก?)"
+                    value={input}
+                    onChange={e => setInput(e.target.value)}
+                    onKeyDown={handleKeyPress}
+                    disabled={loading}
+                    style={{ flex: 1 }}
+                />
+                <button
+                    className="btn btn-primary"
+                    onClick={handleSend}
+                    disabled={loading || !input.trim()}
+                    style={{ padding: '0 20px' }}
+                >
+                    ส่ง
+                </button>
+            </div>
         </div>
     )
 }

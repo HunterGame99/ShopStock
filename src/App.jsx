@@ -95,7 +95,7 @@ function LoginOverlay({ onLogin }) {
                     ))}
                 </div>
                 <div style={{ marginTop: 'var(--space-xl)', fontSize: '10px', color: 'var(--text-muted)' }}>
-                    Admin PIN: 1234 | Staff PIN: 5678
+                    กรุณาติดต่อผู้ดูแลระบบหากลืมรหัส PIN
                 </div>
             </div>
         </div>

@@ -1,9 +1,53 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Html5QrcodeScanner } from 'html5-qrcode';
 
-export default function BarcodeScanner({ onScanSuccess, onClose }) {
+export default function BarcodeScanner({ onScanSuccess, onClose, onScan, placeholder }) {
     const [scanError, setScanError] = useState(null);
+    const [inputValue, setInputValue] = useState('');
+    const inputRef = useRef(null);
 
+    // === Mode: Input field (barcode gun / manual SKU) ===
+    if (onScan) {
+        const handleKeyDown = (e) => {
+            if (e.key === 'Enter' && inputValue.trim()) {
+                e.preventDefault();
+                onScan(inputValue.trim());
+                setInputValue('');
+            }
+        };
+
+        return (
+            <div className="barcode-input-wrapper" style={{ marginBottom: 'var(--space-sm)' }}>
+                <div style={{ position: 'relative' }}>
+                    <input
+                        ref={inputRef}
+                        type="text"
+                        className="form-control"
+                        placeholder={placeholder || '📷 Scan barcode / พิมพ์ SKU...'}
+                        value={inputValue}
+                        onChange={e => setInputValue(e.target.value)}
+                        onKeyDown={handleKeyDown}
+                        style={{ paddingRight: '70px' }}
+                    />
+                    {inputValue && (
+                        <button
+                            onClick={() => { onScan(inputValue.trim()); setInputValue(''); }}
+                            style={{
+                                position: 'absolute', right: '4px', top: '50%', transform: 'translateY(-50%)',
+                                background: 'var(--primary)', color: 'white', border: 'none',
+                                padding: '4px 12px', borderRadius: '4px', cursor: 'pointer',
+                                fontSize: 'var(--font-size-xs)'
+                            }}
+                        >
+                            ตกลง
+                        </button>
+                    )}
+                </div>
+            </div>
+        );
+    }
+
+    // === Mode: Camera scanner (html5-qrcode) ===
     useEffect(() => {
         // Initialize Scanner on mount
         const config = {
