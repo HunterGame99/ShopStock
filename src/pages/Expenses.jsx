@@ -24,6 +24,15 @@ export default function Expenses() {
     }
 
     const handleDelete = (id) => {
+        const expense = expenses.find(e => e.id === id)
+        if (expense) {
+            const expDate = new Date(expense.createdAt)
+            const now = new Date()
+            if (expDate.getMonth() !== now.getMonth() || expDate.getFullYear() !== now.getFullYear()) {
+                toast('ลบได้เฉพาะรายจ่ายเดือนปัจจุบันเท่านั้น', 'error')
+                return
+            }
+        }
         if (confirm('ยืนยันการลบรายจ่าย?')) {
             deleteExpense(id)
             toast('ลบรายจ่ายแล้ว')

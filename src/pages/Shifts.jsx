@@ -50,6 +50,9 @@ export default function Shifts() {
 
     const todaySales = getTodaySales()
     const todayTotal = todaySales.reduce((s, tx) => s + tx.total, 0)
+    const todayCash = todaySales.filter(tx => tx.paymentMethod === 'cash').reduce((s, tx) => s + tx.total, 0)
+    const todayTransfer = todaySales.filter(tx => tx.paymentMethod === 'transfer').reduce((s, tx) => s + tx.total, 0)
+    const todayQR = todaySales.filter(tx => tx.paymentMethod === 'qr').reduce((s, tx) => s + tx.total, 0)
 
     return (
         <div className="animate-in">
@@ -85,6 +88,13 @@ export default function Shifts() {
                         <div className="stat-card mini"><div className="stat-card-icon blue">🛒</div><div className="stat-card-info"><h3>ยอดขายวันนี้</h3><div className="stat-value" style={{ fontSize: 'var(--font-size-lg)' }}>{formatCurrency(todayTotal)}</div></div></div>
                         <div className="stat-card mini"><div className="stat-card-icon purple">📋</div><div className="stat-card-info"><h3>รายการขาย</h3><div className="stat-value" style={{ fontSize: 'var(--font-size-lg)' }}>{todaySales.length}</div></div></div>
                     </div>
+                    {todaySales.length > 0 && (
+                        <div style={{ display: 'flex', gap: 'var(--space-sm)', flexWrap: 'wrap', marginBottom: 'var(--space-md)' }}>
+                            {todayCash > 0 && <span className="badge badge-success">💵 เงินสด {formatCurrency(todayCash)}</span>}
+                            {todayTransfer > 0 && <span className="badge badge-info">📱 โอน {formatCurrency(todayTransfer)}</span>}
+                            {todayQR > 0 && <span className="badge badge-purple">📲 QR {formatCurrency(todayQR)}</span>}
+                        </div>
+                    )}
                     <p style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)' }}>⏰ เปิดเมื่อ {formatDate(activeShift.openedAt)}</p>
                     <button className="btn btn-danger btn-lg" onClick={() => setShowClose(true)} style={{ marginTop: 'var(--space-md)' }}>🔒 ปิดรอบขาย</button>
                 </div>
@@ -99,6 +109,11 @@ export default function Shifts() {
                             <div className="form-group">
                                 <label>💵 นับเงินสดจริง</label>
                                 <input className="form-control" type="number" min="0" value={closingCash} onChange={e => setClosingCash(e.target.value)} placeholder="กรอกจำนวนเงินสดจริง" style={{ textAlign: 'center', fontSize: 'var(--font-size-xl)', fontWeight: 700 }} autoFocus />
+                                <div style={{ display: 'flex', gap: 'var(--space-xs)', marginTop: 'var(--space-sm)', flexWrap: 'wrap', justifyContent: 'center' }}>
+                                    {[500, 1000, 2000, 5000, 10000].map(a => (
+                                        <button key={a} type="button" className="btn btn-secondary btn-sm" onClick={() => setClosingCash(a.toString())}>{formatCurrency(a)}</button>
+                                    ))}
+                                </div>
                             </div>
                         </div>
                         <div className="modal-footer">

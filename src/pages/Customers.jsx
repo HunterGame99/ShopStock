@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { getCustomers, addCustomer, updateCustomer, deleteCustomer, getCustomerPurchases, formatCurrency, formatDate } from '../lib/storage.js'
+import { getCustomers, addCustomer, updateCustomer, deleteCustomer, getCustomerPurchases, formatCurrency, formatDate, getCustomerTier, getNextTier, MEMBERSHIP_TIERS } from '../lib/storage.js'
 import { useToast } from '../App.jsx'
 
 export default function Customers() {
@@ -63,15 +63,22 @@ export default function Customers() {
                     <div className="table-empty"><div className="empty-icon">👥</div><p>ไม่พบลูกค้า</p></div>
                 ) : (
                     <table>
-                        <thead><tr><th>ชื่อ</th><th>เบอร์โทร</th><th>ครั้งที่ซื้อ</th><th>ยอดซื้อรวม</th><th>คะแนน</th><th>จัดการ</th></tr></thead>
+                        <thead><tr><th>ชื่อ</th><th>ระดับ</th><th>เบอร์โทร</th><th>ครั้งที่ซื้อ</th><th>ยอดซื้อรวม</th><th>คะแนน</th><th>จัดการ</th></tr></thead>
                         <tbody>
-                            {filtered.map(c => (
+                            {filtered.map(c => {
+                                const tier = getCustomerTier(c)
+                                const next = getNextTier(c)
+                                return (
                                 <tr key={c.id}>
-                                    <td style={{ fontWeight: 600, color: 'var(--text-primary)', cursor: 'pointer' }} onClick={() => openView(c)}>👤 {c.name}</td>
+                                    <td style={{ fontWeight: 600, color: 'var(--text-primary)', cursor: 'pointer' }} onClick={() => openView(c)}>{tier.emoji} {c.name}</td>
+                                    <td>
+                                        <span style={{ fontSize: '11px', fontWeight: 700, color: tier.color, background: `${tier.color}15`, padding: '2px 8px', borderRadius: '8px' }}>{tier.label}</span>
+                                        {next && <div style={{ marginTop: '3px', height: '3px', background: 'var(--border)', borderRadius: '2px', overflow: 'hidden', width: '60px' }}><div style={{ height: '100%', background: tier.color, width: `${Math.min(100, ((c.totalSpent || 0) / next.minSpent) * 100)}%` }} /></div>}
+                                    </td>
                                     <td>{c.phone || '-'}</td>
                                     <td>{c.visitCount || 0} ครั้ง</td>
                                     <td style={{ fontWeight: 700, color: 'var(--accent-primary-hover)' }}>{formatCurrency(c.totalSpent || 0)}</td>
-                                    <td><span className="badge badge-purple">⭐ {c.points || 0}</span></td>
+                                    <td><span className="badge badge-purple">🪙 {c.points || 0}</span></td>
                                     <td>
                                         <div className="table-actions">
                                             <button className="btn btn-ghost btn-sm" onClick={() => openView(c)}>👁️</button>
@@ -80,7 +87,7 @@ export default function Customers() {
                                         </div>
                                     </td>
                                 </tr>
-                            ))}
+                            )})}
                         </tbody>
                     </table>
                 )}
@@ -112,9 +119,27 @@ export default function Customers() {
                     <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '600px' }}>
                         <div className="modal-header"><h3>👤 {viewCustomer.name}</h3><button className="btn btn-ghost btn-icon" onClick={() => setViewCustomer(null)}>✕</button></div>
                         <div className="modal-body">
+                            {(() => { const vt = getCustomerTier(viewCustomer); const vn = getNextTier(viewCustomer); return (
+                            <div style={{ background: `linear-gradient(135deg, ${vt.color}15, ${vt.color}05)`, border: `1px solid ${vt.color}33`, borderRadius: 'var(--radius-lg)', padding: 'var(--space-md)', marginBottom: 'var(--space-md)' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <span style={{ fontSize: '1.5rem' }}>{vt.emoji}</span>
+                                        <div><div style={{ fontWeight: 800, color: vt.color }}>{vt.label} Member</div><div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{vt.desc}</div></div>
+                                    </div>
+                                    <div style={{ textAlign: 'right' }}><div style={{ fontWeight: 800, fontSize: '1.2rem', color: 'var(--text-primary)' }}>🪙 {(viewCustomer.points || 0).toLocaleString()}</div><div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>คะแนนสะสม</div></div>
+                                </div>
+                                {vt.discount > 0 && <div style={{ fontSize: '11px', color: vt.color, fontWeight: 700, marginBottom: '4px' }}>✨ ส่วนลดสมาชิก {vt.discount}% ทุกบิล</div>}
+                                {vn && <div style={{ marginTop: '6px' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--text-muted)', marginBottom: '3px' }}><span>{formatCurrency(viewCustomer.totalSpent || 0)}</span><span>{vn.emoji} {vn.label} ({formatCurrency(vn.minSpent)})</span></div>
+                                    <div style={{ height: '6px', background: 'var(--border)', borderRadius: '3px', overflow: 'hidden' }}><div style={{ height: '100%', background: `linear-gradient(90deg, ${vt.color}, ${vn.color})`, borderRadius: '3px', width: `${Math.min(100, ((viewCustomer.totalSpent || 0) / vn.minSpent) * 100)}%` }} /></div>
+                                    <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '3px', textAlign: 'right' }}>อีก {formatCurrency(vn.minSpent - (viewCustomer.totalSpent || 0))} ถึงระดับถัดไป</div>
+                                </div>}
+                                {!vn && <div style={{ fontSize: '11px', color: vt.color, fontWeight: 700 }}>⭐ ระดับสูงสุดแล้ว!</div>}
+                            </div>
+                            )})()}
                             <div className="stat-cards" style={{ marginBottom: 'var(--space-md)' }}>
                                 <div className="stat-card mini"><div className="stat-card-info"><h3>ยอดซื้อรวม</h3><div className="stat-value" style={{ fontSize: 'var(--font-size-base)' }}>{formatCurrency(viewCustomer.totalSpent || 0)}</div></div></div>
-                                <div className="stat-card mini"><div className="stat-card-info"><h3>คะแนน</h3><div className="stat-value" style={{ fontSize: 'var(--font-size-base)' }}>⭐ {viewCustomer.points || 0}</div></div></div>
+                                <div className="stat-card mini"><div className="stat-card-info"><h3>จำนวนครั้ง</h3><div className="stat-value" style={{ fontSize: 'var(--font-size-base)' }}>{viewCustomer.visitCount || 0} ครั้ง</div></div></div>
                             </div>
                             <p style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)', marginBottom: 'var(--space-sm)' }}>📱 {viewCustomer.phone || 'ไม่มีเบอร์'} {viewCustomer.note ? `• ${viewCustomer.note}` : ''}</p>
                             <h4 style={{ fontSize: 'var(--font-size-sm)', marginBottom: 'var(--space-sm)', fontWeight: 700 }}>📋 ประวัติการซื้อ ({purchases.length} รายการ)</h4>

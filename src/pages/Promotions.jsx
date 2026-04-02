@@ -37,7 +37,7 @@ export default function Promotions() {
     }
 
     const handleToggle = (id) => { togglePromotion(id); reload() }
-    const handleDelete = (id) => { deletePromotion(id); toast('ลบ Promotion สำเร็จ'); reload() }
+    const handleDelete = (id) => { if (!confirm('ยืนยันลบโปรโมชั่นนี้?')) return; deletePromotion(id); toast('ลบ Promotion สำเร็จ'); reload() }
 
     return (
         <div className="animate-in">

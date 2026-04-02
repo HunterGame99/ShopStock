@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react'
-import { getProducts, addTransaction, getCustomers, formatCurrency, formatDate, playSound, getTopProducts, getCategoryEmoji, applyPromotions, getPromotions, CATEGORIES, holdBill, getHeldBills, resumeBill, deleteHeldBill, getRecentSales, addCredit, getUnpaidCredits, getSettings, redeemPoints, generateInvoiceNumber } from '../lib/storage.js'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { getProducts, addTransaction, getCustomers, formatCurrency, formatDate, playSound, getTopProducts, getCategoryEmoji, applyPromotions, getPromotions, CATEGORIES, holdBill, getHeldBills, resumeBill, deleteHeldBill, getRecentSales, addCredit, getUnpaidCredits, getSettings, redeemPoints, generateInvoiceNumber, getCustomerTier, getNextTier, getTierDiscount, MEMBERSHIP_TIERS, getRewards, redeemReward, seedDefaultRewards } from '../lib/storage.js'
 import { useToast, useShift } from '../App.jsx'
 import BarcodeScanner from '../components/BarcodeScanner.jsx'
 import ReceiptPrinter from '../components/ReceiptPrinter.jsx'
@@ -35,9 +35,12 @@ export default function StockOut() {
     const [settings, setSettings] = useState({ shopName: 'ShopStock', shopAddress: '', shopPhone: '', receiptFooter: 'ขอบคุณที่ใช้บริการ ❤️', vatEnabled: false, vatRate: 7 })
     const toast = useToast()
 
-    // Preview points: 25 THB = 1 Point
     const selectedCustomerData = customers.find(c => c.id === selectedCustomer)
-    const pointsToEarn = Math.floor((cart.reduce((s, c) => s + (c.qty * c.price), 0) - (Number(discount) || 0) - promoDiscount) / 25)
+    const customerTier = selectedCustomerData ? getCustomerTier(selectedCustomerData) : null
+    const customerNextTier = selectedCustomerData ? getNextTier(selectedCustomerData) : null
+    const tierDiscount = customerTier ? customerTier.discount : 0
+    const pointRate = customerTier ? customerTier.pointRate : 25
+    const pointsToEarn = Math.floor((cart.reduce((s, c) => s + (c.qty * c.price), 0) - (Number(discount) || 0) - promoDiscount) / pointRate)
 
     const reload = () => {
         const allProducts = getProducts()
@@ -51,17 +54,22 @@ export default function StockOut() {
     }
     useEffect(() => { reload() }, [])
 
-    // BroadcastChannel for Customer Display — keep open for the lifetime of POS
-    const [posChannel] = useState(() => new BroadcastChannel('shopstock_pos_channel'));
-    useEffect(() => { return () => posChannel.close() }, []);
+    // BroadcastChannel for Customer Display — use ref to survive re-renders
+    const posChannelRef = useRef(null);
     useEffect(() => {
+        posChannelRef.current = new BroadcastChannel('shopstock_pos_channel');
+        return () => { posChannelRef.current?.close(); posChannelRef.current = null }
+    }, []);
+    useEffect(() => {
+        const ch = posChannelRef.current;
+        if (!ch) return;
         try {
             if (showReceipt) {
-                posChannel.postMessage({ type: 'PAYMENT_COMPLETE', details: showReceipt });
+                ch.postMessage({ type: 'PAYMENT_COMPLETE', details: { payment: showReceipt.payment, change: showReceipt.change, total: showReceipt.total } });
             } else if (cart.length === 0) {
-                posChannel.postMessage({ type: 'CLEAR' });
+                ch.postMessage({ type: 'CLEAR' });
             } else {
-                posChannel.postMessage({ type: 'CART_UPDATE', cart });
+                ch.postMessage({ type: 'CART_UPDATE', cart: cart.map(c => ({ productName: c.productName, emoji: c.emoji, price: c.price, qty: c.qty })) });
             }
         } catch (e) { /* channel closed */ }
     }, [cart, showReceipt]);
@@ -137,8 +145,9 @@ export default function StockOut() {
     const removeFromCart = (productId) => setCart(cart.filter(c => c.productId !== productId))
 
     const subtotal = cart.reduce((s, c) => s + (c.qty * c.price), 0)
+    const memberDiscount = tierDiscount > 0 ? Math.round(subtotal * tierDiscount / 100) : 0
     const manualDiscount = discountType === 'percent' ? subtotal * (Number(discount) || 0) / 100 : (Number(discount) || 0)
-    const totalDiscount = manualDiscount + promoDiscount + pointsUsed
+    const totalDiscount = manualDiscount + promoDiscount + pointsUsed + memberDiscount
     const cartTotal = Math.max(0, subtotal - totalDiscount)
     const vatAmount = settings.vatEnabled ? (cartTotal * settings.vatRate / (100 + settings.vatRate)) : 0
     const netAmount = cartTotal - vatAmount
@@ -327,7 +336,7 @@ export default function StockOut() {
                         <span className="badge badge-purple">{cartCount} ชิ้น</span>
                     </div>
 
-                    {/* Customer */}
+                    {/* Customer & Membership */}
                     <div style={{ padding: '6px var(--space-md)', borderBottom: '1px solid var(--border)' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
                             <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>ข้อมูลลูกค้า</span>
@@ -335,22 +344,51 @@ export default function StockOut() {
                         </div>
                         <select className="form-control" value={selectedCustomer} onChange={e => setSelectedCustomer(e.target.value)} style={{ padding: '6px 10px', fontSize: 'var(--font-size-xs)' }}>
                             <option value="">👤 ลูกค้าทั่วไป</option>
-                            {customers.map(c => <option key={c.id} value={c.id}>👤 {c.name} {c.phone ? `(${c.phone})` : ''}</option>)}
+                            {customers.map(c => {
+                                const t = getCustomerTier(c)
+                                return <option key={c.id} value={c.id}>{t.emoji} {c.name} {c.phone ? `(${c.phone})` : ''}</option>
+                            })}
                         </select>
-                        {selectedCustomerData && (
-                            <div className="loyalty-badge" style={{ marginTop: '4px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                <span>🪙 คะแนน: {selectedCustomerData.points || 0}</span>
+                        {selectedCustomerData && customerTier && (
+                            <div style={{ marginTop: '6px', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)', padding: '8px 10px', border: `1px solid ${customerTier.color}33` }}>
+                                {/* Tier Badge */}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                        <span style={{ fontSize: '1.1rem' }}>{customerTier.emoji}</span>
+                                        <span style={{ fontSize: '11px', fontWeight: 800, color: customerTier.color }}>{customerTier.label}</span>
+                                        {tierDiscount > 0 && <span style={{ fontSize: '9px', background: `${customerTier.color}22`, color: customerTier.color, padding: '1px 6px', borderRadius: '8px', fontWeight: 700 }}>ลด {tierDiscount}%</span>}
+                                    </div>
+                                    <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-primary)' }}>🪙 {(selectedCustomerData.points || 0).toLocaleString()} pt</span>
+                                </div>
+                                {/* Progress to next tier */}
+                                {customerNextTier && (
+                                    <div style={{ marginTop: '4px' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: 'var(--text-muted)', marginBottom: '2px' }}>
+                                            <span>ยอดสะสม {formatCurrency(selectedCustomerData.totalSpent || 0)}</span>
+                                            <span>ถึง {customerNextTier.emoji} {customerNextTier.label} อีก {formatCurrency(customerNextTier.minSpent - (selectedCustomerData.totalSpent || 0))}</span>
+                                        </div>
+                                        <div style={{ height: '4px', background: 'var(--border)', borderRadius: '2px', overflow: 'hidden' }}>
+                                            <div style={{ height: '100%', background: `linear-gradient(90deg, ${customerTier.color}, ${customerNextTier.color})`, borderRadius: '2px', width: `${Math.min(100, ((selectedCustomerData.totalSpent || 0) / customerNextTier.minSpent) * 100)}%`, transition: 'width 0.5s' }} />
+                                        </div>
+                                    </div>
+                                )}
+                                {!customerNextTier && (
+                                    <div style={{ fontSize: '9px', color: customerTier.color, fontWeight: 600, marginTop: '2px' }}>⭐ ระดับสูงสุดแล้ว!</div>
+                                )}
+                                {/* Points actions */}
                                 {(selectedCustomerData.points || 0) > 0 && cart.length > 0 && (
-                                    pointsUsed > 0 ? (
-                                        <button className="btn btn-ghost btn-sm" onClick={() => setPointsUsed(0)} style={{ fontSize: '10px', color: 'var(--danger)' }}>✕ ยกเลิกแลก ({pointsUsed})</button>
-                                    ) : (
-                                        <button className="btn btn-primary btn-sm" onClick={() => {
-                                            const maxPoints = Math.min(selectedCustomerData.points || 0, subtotal - manualDiscount - promoDiscount)
-                                            if (maxPoints <= 0) return
-                                            const input = window.prompt(`แลกกี่คะแนน? (สูงสุด ${maxPoints} คะแนน = ฿${maxPoints})`, maxPoints)
-                                            if (input && Number(input) > 0 && Number(input) <= maxPoints) setPointsUsed(Number(input))
-                                        }} style={{ fontSize: '10px' }}>🎁 แลกแต้ม</button>
-                                    )
+                                    <div style={{ display: 'flex', gap: '4px', marginTop: '6px' }}>
+                                        {pointsUsed > 0 ? (
+                                            <button className="btn btn-ghost btn-sm" onClick={() => setPointsUsed(0)} style={{ fontSize: '10px', color: 'var(--danger)', flex: 1 }}>✕ ยกเลิกแลก ({pointsUsed} pt)</button>
+                                        ) : (
+                                            <button className="btn btn-primary btn-sm" onClick={() => {
+                                                const maxPoints = Math.min(selectedCustomerData.points || 0, subtotal - manualDiscount - promoDiscount)
+                                                if (maxPoints <= 0) return
+                                                const input = window.prompt(`แลกกี่คะแนน? (สูงสุด ${maxPoints} คะแนน = ฿${maxPoints})`, maxPoints)
+                                                if (input && Number(input) > 0 && Number(input) <= maxPoints) setPointsUsed(Number(input))
+                                            }} style={{ fontSize: '10px', flex: 1 }}>🎁 แลกแต้มลดราคา</button>
+                                        )}
+                                    </div>
                                 )}
                             </div>
                         )}
@@ -412,6 +450,7 @@ export default function StockOut() {
                             {/* Summary */}
                             <div className="cart-summary">
                                 <div className="cart-summary-row"><span>ราคาสินค้า</span><span>{formatCurrency(subtotal)}</span></div>
+                                {memberDiscount > 0 && <div className="cart-summary-row" style={{ color: 'var(--danger)' }}><span>{customerTier?.emoji} สมาชิก {customerTier?.label} ({tierDiscount}%)</span><span>-{formatCurrency(memberDiscount)}</span></div>}
                                 {manualDiscount > 0 && <div className="cart-summary-row" style={{ color: 'var(--danger)' }}><span>ส่วนลด</span><span>-{formatCurrency(manualDiscount)}</span></div>}
                                 {promoDiscount > 0 && <div className="cart-summary-row" style={{ color: 'var(--danger)' }}><span>🏷️ โปรโมชั่น</span><span>-{formatCurrency(promoDiscount)}</span></div>}
                                 {pointsUsed > 0 && <div className="cart-summary-row" style={{ color: 'var(--danger)' }}><span>🎁 แลกแต้ม ({pointsUsed} คะแนน)</span><span>-{formatCurrency(pointsUsed)}</span></div>}

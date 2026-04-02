@@ -250,6 +250,79 @@ export function getCustomerPurchases(customerId) {
     return getTransactions().filter(tx => tx.customerId === customerId && tx.type === 'out')
 }
 
+// ===== Membership Tiers =====
+export const MEMBERSHIP_TIERS = [
+    { key: 'bronze',   label: 'Bronze',   emoji: '🥉', color: '#cd7f32', minSpent: 0,     discount: 0,  pointRate: 25, desc: 'สมาชิกทั่วไป' },
+    { key: 'silver',   label: 'Silver',   emoji: '🥈', color: '#94a3b8', minSpent: 3000,  discount: 3,  pointRate: 20, desc: 'ซื้อครบ ฿3,000 ลด 3% + แต้มเร็วขึ้น' },
+    { key: 'gold',     label: 'Gold',     emoji: '🥇', color: '#f59e0b', minSpent: 10000, discount: 5,  pointRate: 15, desc: 'ซื้อครบ ฿10,000 ลด 5% + แต้มเร็วขึ้น' },
+    { key: 'platinum', label: 'Platinum', emoji: '💎', color: '#8b5cf6', minSpent: 30000, discount: 8,  pointRate: 10, desc: 'ซื้อครบ ฿30,000 ลด 8% + แต้มเร็วที่สุด' },
+]
+
+export function getCustomerTier(customer) {
+    if (!customer) return MEMBERSHIP_TIERS[0]
+    const spent = customer.totalSpent || 0
+    for (let i = MEMBERSHIP_TIERS.length - 1; i >= 0; i--) {
+        if (spent >= MEMBERSHIP_TIERS[i].minSpent) return MEMBERSHIP_TIERS[i]
+    }
+    return MEMBERSHIP_TIERS[0]
+}
+
+export function getNextTier(customer) {
+    const current = getCustomerTier(customer)
+    const idx = MEMBERSHIP_TIERS.findIndex(t => t.key === current.key)
+    return idx < MEMBERSHIP_TIERS.length - 1 ? MEMBERSHIP_TIERS[idx + 1] : null
+}
+
+export function getTierDiscount(customer) {
+    return getCustomerTier(customer).discount
+}
+
+// ===== Point Rewards Catalog =====
+const REWARDS_KEY = 'shopstock_rewards'
+
+export function getRewards() { return getStore(REWARDS_KEY) }
+export function saveRewards(r) { setStore(REWARDS_KEY, r) }
+
+export function addReward(reward) {
+    const rewards = getRewards()
+    const newReward = { id: generateId(), ...reward, active: true, createdAt: new Date().toISOString() }
+    rewards.push(newReward)
+    saveRewards(rewards)
+    return newReward
+}
+
+export function deleteReward(id) {
+    saveRewards(getRewards().filter(r => r.id !== id))
+}
+
+export function redeemReward(customerId, rewardId) {
+    const rewards = getRewards()
+    const reward = rewards.find(r => r.id === rewardId && r.active)
+    if (!reward) return { ok: false, msg: 'ไม่พบของรางวัล' }
+    const customers = getAllCustomers()
+    const customer = customers.find(c => c.id === customerId)
+    if (!customer) return { ok: false, msg: 'ไม่พบลูกค้า' }
+    if ((customer.points || 0) < reward.points) return { ok: false, msg: `แต้มไม่พอ (ต้องการ ${reward.points} มี ${customer.points || 0})` }
+    customer.points = (customer.points || 0) - reward.points
+    if (!customer.redeemHistory) customer.redeemHistory = []
+    customer.redeemHistory.push({ rewardId, rewardName: reward.name, points: reward.points, at: new Date().toISOString() })
+    saveCustomers(customers)
+    return { ok: true, msg: `แลก "${reward.name}" สำเร็จ!`, reward }
+}
+
+export const DEFAULT_REWARDS = [
+    { name: 'ส่วนลด ฿20', emoji: '🏷️', points: 100, type: 'discount', value: 20 },
+    { name: 'ส่วนลด ฿50', emoji: '🎫', points: 200, type: 'discount', value: 50 },
+    { name: 'ส่วนลด ฿100', emoji: '🎟️', points: 350, type: 'discount', value: 100 },
+    { name: 'สินค้าฟรี 1 ชิ้น (ไม่เกิน ฿30)', emoji: '🎁', points: 150, type: 'freebie', value: 30 },
+    { name: 'เครื่องดื่มฟรี 1 แก้ว', emoji: '☕', points: 80, type: 'freebie', value: 20 },
+]
+
+export function seedDefaultRewards() {
+    if (getRewards().length > 0) return
+    DEFAULT_REWARDS.forEach(r => addReward(r))
+}
+
 // ===== Transactions CRUD =====
 export function getTransactions() { return getStore(TRANSACTIONS_KEY) }
 export function saveTransactions(txs) { setStore(TRANSACTIONS_KEY, txs) }
@@ -286,14 +359,18 @@ export function addTransaction(tx) {
     })
     saveProducts(products)
 
-    // Update customer stats & points
+    // Update customer stats & points (use tier-based point rate)
     if (newTx.customerId && newTx.type === 'out') {
         const customer = getCustomers().find(c => c.id === newTx.customerId)
         if (customer) {
+            const tier = getCustomerTier(customer)
+            const pointRate = tier.pointRate || 25
+            const newSpent = (customer.totalSpent || 0) + newTx.total
+            const earnedPoints = Math.floor(newTx.total / pointRate)
             updateCustomer(customer.id, {
-                totalSpent: (customer.totalSpent || 0) + newTx.total,
+                totalSpent: newSpent,
                 visitCount: (customer.visitCount || 0) + 1,
-                points: (customer.points || 0) + Math.floor(newTx.total / 25), // 25 THB = 1 Point
+                points: (customer.points || 0) + earnedPoints,
             })
         }
     }

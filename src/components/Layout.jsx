@@ -120,7 +120,7 @@ export default function Layout({ children }) {
                     {!isCollapsed && (
                         <div>
                             <h1>ShopStock</h1>
-                            <span>Smart Inventory v3.4</span>
+                            <span>Smart Inventory v{__APP_VERSION__}</span>
                         </div>
                     )}
                 </div>
