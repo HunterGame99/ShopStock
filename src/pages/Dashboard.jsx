@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { getProducts, getTransactions, getTodaySales, getLowStockProducts, getTotalStockValue, getTotalRetailValue, formatCurrency, formatNumber, formatDate, getTodayRevenue, getTodayProfit, getTodayExpenses, getRevenueTrend, getTopProducts, getSlowProducts, getLast7DaysData, getTodayTarget, setDailyTarget, getWeekComparison, getExpiringProducts, getNotifications, getCustomers, getCustomerTier } from '../lib/storage.js'
+import { getProducts, getTransactions, getTodaySales, getLowStockProducts, getTotalStockValue, getTotalRetailValue, formatCurrency, formatNumber, formatDate, getTodayRevenue, getTodayProfit, getTodayExpenses, getRevenueTrend, getTopProducts, getSlowProducts, getLast7DaysData, getTodayTarget, setDailyTarget, getWeekComparison, getExpiringProducts, getNotifications, getCustomers, getCustomerTier, getCoupons } from '../lib/storage.js'
 import { useToast, useAuth } from '../App.jsx'
 import { canSeeProfit, canAccessPage } from '../lib/permissions.js'
 import { Link } from 'react-router-dom'
@@ -32,7 +32,10 @@ export default function Dashboard() {
         const expiring = getExpiringProducts(7)
         const notifs = getNotifications()
         const recentActivity = getTransactions().slice(0, 8)
-        const topMembers = getCustomers().sort((a, b) => (b.totalSpent || 0) - (a.totalSpent || 0)).slice(0, 5)
+        const allCustomers = getCustomers()
+        const topMembers = [...allCustomers].sort((a, b) => (b.totalSpent || 0) - (a.totalSpent || 0)).slice(0, 5)
+        const todayStr = new Date().toDateString()
+        const newMembersToday = allCustomers.filter(c => c.createdAt && new Date(c.createdAt).toDateString() === todayStr).length
         const hourlyData = (() => {
             const hours = Array.from({ length: 24 }, (_, i) => ({ hour: `${i.toString().padStart(2, '0')}:00`, revenue: 0, count: 0 }))
             getTodaySales().forEach(tx => {
@@ -43,7 +46,21 @@ export default function Dashboard() {
             return hours.filter(h => h.revenue > 0 || h.count > 0)
         })()
 
-        setData({ products, todaySales, todayRevenue, todayProfit, todayExpenses, trend, lowStock, stockValue, retailValue, topProducts, slowProducts, last7Days, totalItems, target, weekComp, expiring, notifs, recentActivity, topMembers, hourlyData })
+        const paymentBreakdown = (() => {
+            const methods = { cash: 0, transfer: 0, qr: 0, split: 0 }
+            todaySales.forEach(tx => { methods[tx.paymentMethod || 'cash'] = (methods[tx.paymentMethod || 'cash'] || 0) + tx.total })
+            return methods
+        })()
+
+        const coupons = getCoupons()
+        const activeCoupons = coupons.filter(c => c.active)
+        const now = new Date()
+        const in7days = new Date(); in7days.setDate(in7days.getDate() + 7)
+        const expiringCoupons = activeCoupons.filter(c => c.expiresAt && new Date(c.expiresAt) > now && new Date(c.expiresAt) <= in7days)
+        const expiredCoupons = coupons.filter(c => c.expiresAt && new Date(c.expiresAt) < now && c.active)
+        const couponAlerts = { active: activeCoupons.length, expiring: expiringCoupons, expired: expiredCoupons }
+
+        setData({ products, todaySales, todayRevenue, todayProfit, todayExpenses, trend, lowStock, stockValue, retailValue, topProducts, slowProducts, last7Days, totalItems, target, weekComp, expiring, notifs, recentActivity, topMembers, newMembersToday, hourlyData, paymentBreakdown, couponAlerts })
     }
 
     useEffect(() => {
@@ -167,6 +184,16 @@ export default function Dashboard() {
                         <div className="stat-sub">รายการ</div>
                     </div>
                 </div>}
+                {data.newMembersToday > 0 && (
+                    <div className="stat-card">
+                        <div className="stat-card-icon orange">🆕</div>
+                        <div className="stat-card-info">
+                            <h3>สมาชิกใหม่วันนี้</h3>
+                            <div className="stat-value">{data.newMembersToday}</div>
+                            <div className="stat-sub">คนสมัครใหม่</div>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {showTargetInput && (
@@ -296,6 +323,33 @@ export default function Dashboard() {
                             </tbody>
                         </table>
                     </div>
+                    {/* Visual Bar Chart */}
+                    {(() => {
+                        const maxVal = Math.max(...data.weekComp.thisWeek.map(d => d.revenue), ...data.weekComp.lastWeek.map(d => d.revenue), 1)
+                        const days = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส']
+                        return (
+                            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '6px', marginTop: 'var(--space-md)', height: '120px', padding: '0 var(--space-sm)' }}>
+                                {data.weekComp.thisWeek.map((d, i) => {
+                                    const twH = maxVal > 0 ? (d.revenue / maxVal) * 100 : 0
+                                    const lwH = maxVal > 0 ? (data.weekComp.lastWeek[i].revenue / maxVal) * 100 : 0
+                                    const dayIdx = new Date(new Date().setDate(new Date().getDate() - (6 - i))).getDay()
+                                    return (
+                                        <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', height: '100%', justifyContent: 'flex-end' }}>
+                                            <div style={{ display: 'flex', gap: '2px', alignItems: 'flex-end', width: '100%', justifyContent: 'center', flex: 1 }}>
+                                                <div style={{ width: '40%', background: 'var(--accent-primary)', borderRadius: '3px 3px 0 0', height: `${Math.max(twH, 2)}%`, transition: 'height 0.5s', opacity: 0.85 }} title={`สัปดาห์นี้: ${formatCurrency(d.revenue)}`} />
+                                                <div style={{ width: '40%', background: 'var(--text-muted)', borderRadius: '3px 3px 0 0', height: `${Math.max(lwH, 2)}%`, transition: 'height 0.5s', opacity: 0.4 }} title={`สัปดาห์ก่อน: ${formatCurrency(data.weekComp.lastWeek[i].revenue)}`} />
+                                            </div>
+                                            <div style={{ fontSize: '9px', color: 'var(--text-muted)', fontWeight: 600 }}>{days[dayIdx]}</div>
+                                        </div>
+                                    )
+                                })}
+                            </div>
+                        )
+                    })()}
+                    <div style={{ display: 'flex', gap: 'var(--space-md)', justifyContent: 'center', marginTop: 'var(--space-sm)', fontSize: '10px', color: 'var(--text-muted)' }}>
+                        <span><span style={{ display: 'inline-block', width: '10px', height: '10px', background: 'var(--accent-primary)', borderRadius: '2px', opacity: 0.85, marginRight: '4px' }} />สัปดาห์นี้</span>
+                        <span><span style={{ display: 'inline-block', width: '10px', height: '10px', background: 'var(--text-muted)', borderRadius: '2px', opacity: 0.4, marginRight: '4px' }} />สัปดาห์ก่อน</span>
+                    </div>
                 </div>
             )}
 
@@ -373,6 +427,91 @@ export default function Dashboard() {
                     )}
                 </div>
             </div>
+
+            {/* Payment Breakdown */}
+            {data.todayRevenue > 0 && (
+                <div className="chart-container" style={{ marginBottom: 'var(--space-lg)' }}>
+                    <div className="chart-header"><h3>💳 ช่องทางชำระเงินวันนี้</h3><span className="badge badge-info">{data.todaySales.length} รายการ</span></div>
+                    <div style={{ display: 'flex', gap: 'var(--space-lg)', alignItems: 'center', flexWrap: 'wrap' }}>
+                        {/* Donut visual */}
+                        <div style={{ position: 'relative', width: '140px', height: '140px', flexShrink: 0 }}>
+                            <svg viewBox="0 0 36 36" style={{ width: '100%', height: '100%', transform: 'rotate(-90deg)' }}>
+                                {(() => {
+                                    const total = data.todayRevenue || 1
+                                    const methods = [
+                                        { key: 'cash', color: '#4ade80', value: data.paymentBreakdown.cash },
+                                        { key: 'transfer', color: '#60a5fa', value: data.paymentBreakdown.transfer },
+                                        { key: 'qr', color: '#f59e0b', value: data.paymentBreakdown.qr },
+                                        { key: 'split', color: '#a78bfa', value: data.paymentBreakdown.split },
+                                    ].filter(m => m.value > 0)
+                                    let offset = 0
+                                    return methods.map(m => {
+                                        const pct = (m.value / total) * 100
+                                        const el = <circle key={m.key} cx="18" cy="18" r="15.915" fill="none" stroke={m.color} strokeWidth="3.5" strokeDasharray={`${pct} ${100 - pct}`} strokeDashoffset={-offset} />
+                                        offset += pct
+                                        return el
+                                    })
+                                })()}
+                            </svg>
+                            <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', textAlign: 'center' }}>
+                                <div style={{ fontSize: '11px', fontWeight: 800, color: 'var(--text-primary)' }}>{formatCurrency(data.todayRevenue)}</div>
+                                <div style={{ fontSize: '9px', color: 'var(--text-muted)' }}>ยอดวันนี้</div>
+                            </div>
+                        </div>
+
+                        {/* Legend */}
+                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px', minWidth: '200px' }}>
+                            {[
+                                { key: 'cash', label: '💵 เงินสด', color: '#4ade80', value: data.paymentBreakdown.cash },
+                                { key: 'transfer', label: '📱 โอนเงิน', color: '#60a5fa', value: data.paymentBreakdown.transfer },
+                                { key: 'qr', label: '📲 QR Code', color: '#f59e0b', value: data.paymentBreakdown.qr },
+                                { key: 'split', label: '🌗 ผสม', color: '#a78bfa', value: data.paymentBreakdown.split },
+                            ].filter(m => m.value > 0).map(m => {
+                                const pct = data.todayRevenue > 0 ? (m.value / data.todayRevenue) * 100 : 0
+                                return (
+                                    <div key={m.key} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                        <span style={{ width: '12px', height: '12px', borderRadius: '3px', background: m.color, flexShrink: 0 }} />
+                                        <span style={{ flex: 1, fontSize: 'var(--font-size-sm)', color: 'var(--text-secondary)' }}>{m.label}</span>
+                                        <span style={{ fontWeight: 700, fontSize: 'var(--font-size-sm)', color: 'var(--text-primary)' }}>{formatCurrency(m.value)}</span>
+                                        <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)', width: '40px', textAlign: 'right' }}>{pct.toFixed(0)}%</span>
+                                    </div>
+                                )
+                            })}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Coupon Alerts */}
+            {(data.couponAlerts.expiring.length > 0 || data.couponAlerts.expired.length > 0) && (
+                <div className="chart-container" style={{ marginBottom: 'var(--space-lg)' }}>
+                    <div className="chart-header"><h3>🎫 แจ้งเตือนคูปอง</h3><span className="badge badge-purple">{data.couponAlerts.active} ใช้งานอยู่</span></div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {data.couponAlerts.expired.length > 0 && (
+                            <div style={{ padding: '10px 14px', borderRadius: 'var(--radius-md)', background: 'rgba(248,113,113,0.1)', border: '1px solid rgba(248,113,113,0.3)' }}>
+                                <div style={{ fontSize: 'var(--font-size-sm)', fontWeight: 700, color: '#f87171', marginBottom: '4px' }}>⛔ คูปองหมดอายุแล้ว (ยังเปิดอยู่)</div>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                    {data.couponAlerts.expired.map(c => (
+                                        <span key={c.id} style={{ padding: '3px 10px', background: 'rgba(248,113,113,0.15)', borderRadius: '6px', fontSize: '11px', fontWeight: 700, fontFamily: 'monospace', color: '#f87171' }}>{c.code}</span>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                        {data.couponAlerts.expiring.length > 0 && (
+                            <div style={{ padding: '10px 14px', borderRadius: 'var(--radius-md)', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)' }}>
+                                <div style={{ fontSize: 'var(--font-size-sm)', fontWeight: 700, color: '#f59e0b', marginBottom: '4px' }}>⚠️ คูปองจะหมดอายุใน 7 วัน</div>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                    {data.couponAlerts.expiring.map(c => (
+                                        <span key={c.id} style={{ padding: '3px 10px', background: 'rgba(245,158,11,0.15)', borderRadius: '6px', fontSize: '11px', fontWeight: 700, fontFamily: 'monospace', color: '#f59e0b' }}>
+                                            {c.code} ({new Date(c.expiresAt).toLocaleDateString('th-TH')})
+                                        </span>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
 
             {/* AI Assistant */}
             <div style={{ marginTop: 'var(--space-lg)' }}>

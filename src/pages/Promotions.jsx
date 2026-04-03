@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { getPromotions, addPromotion, togglePromotion, deletePromotion, getProducts, formatCurrency, getRewards, addReward, deleteReward, seedDefaultRewards, getCoupons, addCoupon, deleteCoupon, toggleCoupon } from '../lib/storage.js'
+import { getPromotions, addPromotion, togglePromotion, deletePromotion, getProducts, formatCurrency, getRewards, addReward, deleteReward, seedDefaultRewards, getCoupons, addCoupon, deleteCoupon, toggleCoupon, updateCoupon } from '../lib/storage.js'
 import { useToast } from '../App.jsx'
 
 const promoTypes = [
@@ -20,6 +20,7 @@ export default function Promotions() {
     const [rewardForm, setRewardForm] = useState({ name: '', emoji: '🎁', points: '', type: 'discount', value: '' })
     const [coupons, setCoupons] = useState([])
     const [showCouponModal, setShowCouponModal] = useState(false)
+    const [editCouponId, setEditCouponId] = useState(null)
     const [couponForm, setCouponForm] = useState({ code: '', type: 'fixed', value: '', minSpend: '', maxUses: '', expiresAt: '' })
     const toast = useToast()
 
@@ -107,7 +108,10 @@ export default function Promotions() {
                                     <td>{c.maxUses > 0 ? `${c.usedCount || 0}/${c.maxUses}` : `${c.usedCount || 0}/∞`}</td>
                                     <td style={{ fontSize: 'var(--font-size-xs)', color: c.expiresAt && new Date(c.expiresAt) < new Date() ? 'var(--danger)' : 'var(--text-muted)' }}>{c.expiresAt ? new Date(c.expiresAt).toLocaleDateString('th-TH') : 'ไม่มี'}</td>
                                     <td><button className={`btn btn-sm ${c.active ? 'btn-success' : 'btn-secondary'}`} onClick={() => { toggleCoupon(c.id); reload() }}>{c.active ? '🟢 เปิด' : '⭕ ปิด'}</button></td>
-                                    <td><button className="btn btn-ghost btn-sm" onClick={() => { if (confirm('ลบคูปองนี้?')) { deleteCoupon(c.id); reload(); toast('ลบแล้ว') } }}>🗑️</button></td>
+                                    <td style={{ display: 'flex', gap: '2px' }}>
+                                        <button className="btn btn-ghost btn-sm" onClick={() => { setEditCouponId(c.id); setCouponForm({ code: c.code, type: c.type, value: c.value.toString(), minSpend: c.minSpend ? c.minSpend.toString() : '', maxUses: c.maxUses ? c.maxUses.toString() : '', expiresAt: c.expiresAt || '' }); setShowCouponModal(true) }} title="แก้ไข">✏️</button>
+                                        <button className="btn btn-ghost btn-sm" onClick={() => { if (confirm('ลบคูปองนี้?')) { deleteCoupon(c.id); reload(); toast('ลบแล้ว') } }}>🗑️</button>
+                                    </td>
                                 </tr>
                             ))}
                         </tbody>
@@ -115,17 +119,23 @@ export default function Promotions() {
                 )}
             </div>
 
-            {/* Add Coupon Modal */}
+            {/* Add/Edit Coupon Modal */}
             {showCouponModal && (
-                <div className="modal-overlay" onClick={() => setShowCouponModal(false)}>
+                <div className="modal-overlay" onClick={() => { setShowCouponModal(false); setEditCouponId(null) }}>
                     <div className="modal" onClick={e => e.stopPropagation()}>
-                        <div className="modal-header"><h3>➕ สร้างคูปอง</h3><button className="btn btn-ghost btn-icon" onClick={() => setShowCouponModal(false)}>✕</button></div>
+                        <div className="modal-header"><h3>{editCouponId ? '✏️ แก้ไขคูปอง' : '➕ สร้างคูปอง'}</h3><button className="btn btn-ghost btn-icon" onClick={() => { setShowCouponModal(false); setEditCouponId(null) }}>✕</button></div>
                         <form onSubmit={e => {
                             e.preventDefault()
                             if (!couponForm.code || !couponForm.value) { toast('กรอกโค้ดและส่วนลด', 'error'); return }
-                            addCoupon({ code: couponForm.code.toUpperCase().trim(), type: couponForm.type, value: Number(couponForm.value), minSpend: Number(couponForm.minSpend) || 0, maxUses: Number(couponForm.maxUses) || 0, expiresAt: couponForm.expiresAt || null })
-                            toast('สร้างคูปองสำเร็จ 🎫')
-                            setShowCouponModal(false)
+                            const couponData = { code: couponForm.code.toUpperCase().trim(), type: couponForm.type, value: Number(couponForm.value), minSpend: Number(couponForm.minSpend) || 0, maxUses: Number(couponForm.maxUses) || 0, expiresAt: couponForm.expiresAt || null }
+                            if (editCouponId) {
+                                updateCoupon(editCouponId, couponData)
+                                toast('แก้ไขคูปองสำเร็จ ✏️')
+                            } else {
+                                addCoupon(couponData)
+                                toast('สร้างคูปองสำเร็จ 🎫')
+                            }
+                            setShowCouponModal(false); setEditCouponId(null)
                             setCouponForm({ code: '', type: 'fixed', value: '', minSpend: '', maxUses: '', expiresAt: '' })
                             reload()
                         }}>
@@ -152,8 +162,8 @@ export default function Promotions() {
                                 </div>
                             </div>
                             <div className="modal-footer">
-                                <button type="button" className="btn btn-secondary" onClick={() => setShowCouponModal(false)}>ยกเลิก</button>
-                                <button type="submit" className="btn btn-primary">🎫 สร้างคูปอง</button>
+                                <button type="button" className="btn btn-secondary" onClick={() => { setShowCouponModal(false); setEditCouponId(null) }}>ยกเลิก</button>
+                                <button type="submit" className="btn btn-primary">{editCouponId ? '💾 บันทึก' : '🎫 สร้างคูปอง'}</button>
                             </div>
                         </form>
                     </div>

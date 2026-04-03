@@ -341,6 +341,10 @@ export function deleteCoupon(id) {
     saveCoupons(getCoupons().filter(c => c.id !== id))
 }
 
+export function updateCoupon(id, data) {
+    saveCoupons(getCoupons().map(c => c.id === id ? { ...c, ...data } : c))
+}
+
 export function toggleCoupon(id) {
     const coupons = getCoupons()
     const c = coupons.find(x => x.id === id)
@@ -814,11 +818,16 @@ export function getExpiringProducts(days = 30) {
     const deadline = new Date(); deadline.setDate(deadline.getDate() + days)
     const results = []
     products.forEach(p => {
+        // Check lot-level expiry
         (p.lots || []).forEach(lot => {
             if (lot.expDate && new Date(lot.expDate) <= deadline) {
                 results.push({ ...p, lot: lot.lot, expDate: lot.expDate, lotQty: lot.qty })
             }
         })
+        // Check product-level expiry
+        if (p.expiryDate && new Date(p.expiryDate) <= deadline && !(p.lots || []).length) {
+            results.push({ ...p, expDate: p.expiryDate, lotQty: p.stock })
+        }
     })
     return results.sort((a, b) => new Date(a.expDate) - new Date(b.expDate))
 }

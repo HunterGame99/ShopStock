@@ -5,7 +5,7 @@ import { useToast, useAuth } from '../App.jsx'
 import { canEditProducts, canSeeProfit } from '../lib/permissions.js'
 import Barcode from 'react-barcode'
 
-const emptyForm = { name: '', sku: '', barcode: '', category: '', emoji: '📦', imageUrl: '', costPrice: '', sellPrice: '', stock: '', minStock: '5' }
+const emptyForm = { name: '', sku: '', barcode: '', category: '', emoji: '📦', imageUrl: '', costPrice: '', sellPrice: '', stock: '', minStock: '5', expiryDate: '' }
 
 export default function Products() {
     const [products, setProducts] = useState([])
@@ -53,6 +53,7 @@ export default function Products() {
             category: product.category, emoji: product.emoji || '📦', imageUrl: product.imageUrl || '',
             costPrice: product.costPrice.toString(), sellPrice: product.sellPrice.toString(),
             stock: product.stock.toString(), minStock: product.minStock.toString(),
+            expiryDate: product.expiryDate || '',
         })
         setImageFile(null)
         setShowModal(true)
@@ -247,10 +248,17 @@ export default function Products() {
                                             </div>
                                             <span style={{ fontSize: 'var(--font-size-xs)', fontWeight: 700 }}>{p.stock}</span>
                                         </td>
-                                        <td>
+                                        <td style={{ display: 'flex', flexDirection: 'column', gap: '3px', alignItems: 'flex-start' }}>
                                             {p.stock === 0 ? <span className="badge badge-danger">หมด</span>
                                                 : p.stock <= p.minStock ? <span className="badge badge-warning">ใกล้หมด</span>
                                                     : <span className="badge badge-success">ปกติ</span>}
+                                            {p.expiryDate && (() => {
+                                                const days = Math.ceil((new Date(p.expiryDate) - new Date()) / 86400000)
+                                                if (days < 0) return <span className="badge badge-danger" style={{ fontSize: '9px' }}>⛔ หมดอายุ</span>
+                                                if (days <= 7) return <span className="badge badge-warning" style={{ fontSize: '9px' }}>⚠️ อีก {days} วัน</span>
+                                                if (days <= 30) return <span className="badge badge-info" style={{ fontSize: '9px' }}>📅 {days} วัน</span>
+                                                return null
+                                            })()}
                                         </td>
                                         <td>
                                             {canEditProducts(role) && <div className="table-actions" style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
@@ -362,6 +370,10 @@ export default function Products() {
                                         <label>สต็อกขั้นต่ำ (แจ้งเตือน)</label>
                                         <input className="form-control" type="number" min="0" value={form.minStock} onChange={e => setForm({ ...form, minStock: e.target.value })} placeholder="5" />
                                     </div>
+                                </div>
+                                <div className="form-group">
+                                    <label>📅 วันหมดอายุ (ถ้ามี)</label>
+                                    <input className="form-control" type="date" value={form.expiryDate} onChange={e => setForm({ ...form, expiryDate: e.target.value })} />
                                 </div>
                             </div>
                             <div className="modal-footer">

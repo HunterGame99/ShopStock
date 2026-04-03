@@ -1,15 +1,19 @@
-import { useState, useEffect, Fragment } from 'react'
-import { getTransactions, formatCurrency, formatDate, exportCSV, calcTxProfit, refundTransaction, getCustomers, getCustomerTier } from '../lib/storage.js'
+import { useState, useEffect, Fragment, useRef } from 'react'
+import { getTransactions, formatCurrency, formatDate, exportCSV, calcTxProfit, refundTransaction, getCustomers, getCustomerTier, getSettings } from '../lib/storage.js'
 import { useToast, useAuth } from '../App.jsx'
 import { isAdmin } from '../lib/permissions.js'
+import ReceiptPrinter from '../components/ReceiptPrinter.jsx'
 
 export default function History() {
     const [transactions, setTransactions] = useState([])
     const [filterType, setFilterType] = useState('')
     const [filterDate, setFilterDate] = useState('')
+    const [filterPayment, setFilterPayment] = useState('')
     const [search, setSearch] = useState('')
     const [expanded, setExpanded] = useState(null)
     const [viewMode, setViewMode] = useState('all') // 'all', 'daily', 'monthly'
+    const [printTx, setPrintTx] = useState(null)
+    const receiptRef = useRef()
     const toast = useToast()
     const { user } = useAuth()
     const role = user?.role || 'staff'
@@ -39,7 +43,8 @@ export default function History() {
         const matchType = !filterType || tx.type === filterType
         const matchDate = !filterDate || tx.createdAt.startsWith(filterDate)
         const matchSearch = !search || tx.items.some(i => i.productName.toLowerCase().includes(search.toLowerCase()))
-        return matchType && matchDate && matchSearch
+        const matchPayment = !filterPayment || tx.paymentMethod === filterPayment
+        return matchType && matchDate && matchSearch && matchPayment
     })
 
     // Daily summary
@@ -65,6 +70,23 @@ export default function History() {
     const handleExport = () => {
         exportCSV(filtered)
         toast('ดาวน์โหลด CSV สำเร็จ 📁')
+    }
+
+    const handlePrintReceipt = (tx) => {
+        setPrintTx(tx)
+        setTimeout(() => {
+            if (receiptRef.current) {
+                const printWindow = window.open('', '_blank', 'width=400,height=600')
+                printWindow.document.write('<html><head><title>ใบเสร็จ</title></head><body>')
+                printWindow.document.write(receiptRef.current.innerHTML)
+                printWindow.document.write('</body></html>')
+                printWindow.document.close()
+                printWindow.focus()
+                printWindow.print()
+                printWindow.close()
+            }
+            setPrintTx(null)
+        }, 200)
     }
 
     return (
@@ -112,13 +134,20 @@ export default function History() {
                             <option value="out">🛒 ขาย</option>
                             <option value="refund">↩️ คืนสินค้า</option>
                         </select>
+                        <select className="form-control" value={filterPayment} onChange={e => setFilterPayment(e.target.value)} style={{ width: 'auto', padding: '8px 12px' }}>
+                            <option value="">ทุกช่องทาง</option>
+                            <option value="cash">💵 เงินสด</option>
+                            <option value="transfer">📱 โอน</option>
+                            <option value="qr">📲 QR</option>
+                            <option value="split">🌗 ผสม</option>
+                        </select>
                         <input className="form-control" type="date" value={filterDate} onChange={e => setFilterDate(e.target.value)} style={{ width: 'auto', padding: '8px 12px' }} />
                         <div style={{ display: 'flex', gap: '2px', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)', padding: '2px' }}>
                             <button className={`btn btn-sm ${viewMode === 'all' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setViewMode('all')}>ทั้งหมด</button>
                             <button className={`btn btn-sm ${viewMode === 'daily' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setViewMode('daily')}>รายวัน</button>
                         </div>
-                        {(filterType || filterDate || search) && (
-                            <button className="btn btn-ghost btn-sm" onClick={() => { setFilterType(''); setFilterDate(''); setSearch('') }} style={{ color: 'var(--danger)' }}>✕ ล้างตัวกรอง</button>
+                        {(filterType || filterDate || search || filterPayment) && (
+                            <button className="btn btn-ghost btn-sm" onClick={() => { setFilterType(''); setFilterDate(''); setSearch(''); setFilterPayment('') }} style={{ color: 'var(--danger)' }}>✕ ล้างตัวกรอง</button>
                         )}
                         <button className="btn btn-secondary btn-sm" onClick={handleExport}>📁 Export CSV</button>
                     </div>
@@ -150,7 +179,7 @@ export default function History() {
                         <div className="table-empty"><div className="empty-icon">📋</div><p>ไม่พบรายการ</p></div>
                     ) : (
                         <table>
-                            <thead><tr><th>วันที่</th><th>เลขที่</th><th>ประเภท</th><th>ลูกค้า</th><th>รายการ</th><th>จำนวน</th><th>มูลค่า</th><th>กำไร</th><th></th></tr></thead>
+                            <thead><tr><th>วันที่</th><th>เลขที่</th><th>ประเภท</th><th>ช่องทาง</th><th>ลูกค้า</th><th>รายการ</th><th>จำนวน</th><th>มูลค่า</th><th>กำไร</th><th></th></tr></thead>
                             <tbody>
                                 {filtered.map(tx => (
                                     <Fragment key={tx.id}>
@@ -162,6 +191,13 @@ export default function History() {
                                                     {tx.type === 'in' ? '📥 นำเข้า' : tx.type === 'refund' ? '↩️ คืน' : '🛒 ขาย'}
                                                 </span>
                                                 {tx.refunded && <span className="badge badge-danger" style={{ marginLeft: '4px', fontSize: '0.5rem' }}>คืนแล้ว</span>}
+                                            </td>
+                                            <td>
+                                                {tx.type === 'out' && (
+                                                    <span style={{ fontSize: 'var(--font-size-xs)', fontWeight: 600, padding: '2px 6px', borderRadius: '6px', background: tx.paymentMethod === 'cash' ? 'rgba(74,222,128,0.12)' : tx.paymentMethod === 'transfer' ? 'rgba(96,165,250,0.12)' : tx.paymentMethod === 'split' ? 'rgba(167,139,250,0.12)' : 'rgba(245,158,11,0.12)', color: tx.paymentMethod === 'cash' ? '#4ade80' : tx.paymentMethod === 'transfer' ? '#60a5fa' : tx.paymentMethod === 'split' ? '#a78bfa' : '#f59e0b' }}>
+                                                        {tx.paymentMethod === 'cash' ? '💵' : tx.paymentMethod === 'transfer' ? '📱' : tx.paymentMethod === 'split' ? '🌗' : '📲'}
+                                                    </span>
+                                                )}
                                             </td>
                                             <td>
                                                 {(() => { const cust = tx.customerId ? customerMap[tx.customerId] : null; if (!cust) return <span style={{ color: 'var(--text-muted)', fontSize: 'var(--font-size-xs)' }}>ลูกค้าทั่วไป</span>; const t = getCustomerTier(cust); return <span style={{ fontSize: 'var(--font-size-xs)' }}><span style={{ color: t.color }}>{t.emoji}</span> {cust.name}</span> })()}
@@ -177,6 +213,9 @@ export default function History() {
                                                 {tx.type === 'out' ? formatCurrency(calcTxProfit(tx)) : '-'}
                                             </td>
                                             <td>
+                                                {tx.type === 'out' && (
+                                                    <button className="btn btn-ghost btn-sm" onClick={(e) => { e.stopPropagation(); handlePrintReceipt(tx) }} title="พิมพ์ใบเสร็จ" style={{ color: 'var(--info)' }}>🖨️</button>
+                                                )}
                                                 {tx.type === 'out' && !tx.refunded && (
                                                     <button className="btn btn-ghost btn-sm" onClick={(e) => { e.stopPropagation(); handleRefund(tx.id) }} title="คืนสินค้า" style={{ color: 'var(--warning)' }}>↩️</button>
                                                 )}
@@ -184,7 +223,7 @@ export default function History() {
                                         </tr>
                                         {expanded === tx.id && (
                                             <tr key={tx.id + '-detail'}>
-                                                <td colSpan="9" style={{ padding: 'var(--space-md)', background: 'var(--bg-primary)' }}>
+                                                <td colSpan="10" style={{ padding: 'var(--space-md)', background: 'var(--bg-primary)' }}>
                                                     {tx.items.map((item, i) => (
                                                         <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: i < tx.items.length - 1 ? '1px solid var(--border)' : 'none' }}>
                                                             <span>{item.productName} ×{item.qty}</span>
@@ -193,7 +232,7 @@ export default function History() {
                                                     ))}
                                                     {tx.discount > 0 && <div style={{ color: 'var(--danger)', marginTop: '4px' }}>ส่วนลด: -{formatCurrency(tx.discount)}</div>}
                                                     {tx.note && <div style={{ color: 'var(--text-muted)', marginTop: '4px', fontSize: 'var(--font-size-xs)' }}>📝 {tx.note}</div>}
-                                                    {tx.paymentMethod && <div style={{ color: 'var(--text-muted)', fontSize: 'var(--font-size-xs)' }}>💳 {tx.paymentMethod === 'cash' ? 'เงินสด' : tx.paymentMethod === 'transfer' ? 'โอนเงิน' : 'QR'}</div>}
+                                                    {tx.paymentMethod && <div style={{ color: 'var(--text-muted)', fontSize: 'var(--font-size-xs)' }}>💳 {tx.paymentMethod === 'cash' ? 'เงินสด' : tx.paymentMethod === 'transfer' ? 'โอนเงิน' : tx.paymentMethod === 'split' ? '🌗 ผสม' : '📲 QR'}{tx.paymentMethod !== 'cash' && tx.change > 0 ? ` • เงินทอน ${formatCurrency(tx.change)}` : ''}</div>}
                                                 </td>
                                             </tr>
                                         )}
@@ -204,6 +243,9 @@ export default function History() {
                     )
                 )}
             </div>
+
+            {/* Hidden Receipt for Reprint */}
+            {printTx && <ReceiptPrinter ref={receiptRef} transaction={printTx} shopSettings={getSettings()} />}
         </div>
     )
 }

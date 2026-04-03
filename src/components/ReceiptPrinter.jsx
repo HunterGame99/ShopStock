@@ -87,6 +87,12 @@ export default function ReceiptPrinter({ transaction, shopSettings, ref }) {
                                     <td className="right">-{transaction.discount?.toLocaleString()}</td>
                                 </tr>
                             )}
+                            {transaction.couponCode && (
+                                <tr>
+                                    <td>คูปอง: {transaction.couponCode}</td>
+                                    <td className="right">-{transaction.couponDiscount?.toLocaleString()}</td>
+                                </tr>
+                            )}
                             {shopSettings?.vatEnabled && (
                                 <tr>
                                     <td>รวม VAT {shopSettings.vatRate || 7}%</td>
@@ -98,7 +104,7 @@ export default function ReceiptPrinter({ transaction, shopSettings, ref }) {
                                 <td className="right">{transaction.total?.toLocaleString()}</td>
                             </tr>
                             <tr>
-                                <td>รับเงิน ({transaction.paymentMethod === 'cash' ? 'เงินสด' : transaction.paymentMethod === 'qr' ? 'สแกน QR' : 'โอน'})</td>
+                                <td>รับเงิน ({transaction.paymentMethod === 'cash' ? 'เงินสด' : transaction.paymentMethod === 'qr' ? 'สแกน QR' : transaction.paymentMethod === 'split' ? 'ผสม' : 'โอน'})</td>
                                 <td className="right">{transaction.payment?.toLocaleString()}</td>
                             </tr>
                             <tr>
@@ -108,6 +114,24 @@ export default function ReceiptPrinter({ transaction, shopSettings, ref }) {
                         </tbody>
                     </table>
                 </div>
+
+                {transaction.note && (
+                    <>
+                        <div className="receipt-divider"></div>
+                        <p style={{ textAlign: 'center', fontSize: '11px' }}>{transaction.note}</p>
+                    </>
+                )}
+
+                {(transaction.customerName || transaction.pointsEarned > 0) && (
+                    <>
+                        <div className="receipt-divider"></div>
+                        <div style={{ textAlign: 'center', fontSize: '11px' }}>
+                            {transaction.customerName && <p>สมาชิก: {transaction.customerName} {transaction.tierLabel ? `(${transaction.tierLabel})` : ''}</p>}
+                            {transaction.pointsEarned > 0 && <p>คะแนนที่ได้รับ: +{transaction.pointsEarned} คะแนน</p>}
+                            {transaction.totalPoints != null && <p>คะแนนสะสมรวม: {transaction.totalPoints} คะแนน</p>}
+                        </div>
+                    </>
+                )}
 
                 <div className="receipt-divider"></div>
                 <div className="receipt-footer">

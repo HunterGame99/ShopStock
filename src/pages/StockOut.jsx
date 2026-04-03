@@ -323,8 +323,17 @@ export default function StockOut() {
         }
         playSound('success')
         broadcastPaymentQRClear()
-        setShowReceipt({ ...tx, payment: paymentMethod === 'cash' ? Number(payment) : payAmount, change: changeAmount })
-        if (appliedCoupon) { useCoupon(appliedCoupon.coupon.id) }
+        // Build receipt with extra info
+        const receiptData = { ...tx, payment: paymentMethod === 'cash' ? Number(payment) : payAmount, change: changeAmount }
+        if (appliedCoupon) { receiptData.couponCode = appliedCoupon.coupon.code; receiptData.couponDiscount = appliedCoupon.discount; useCoupon(appliedCoupon.coupon.id) }
+        if (selectedCustomerData) {
+            receiptData.customerName = selectedCustomerData.name
+            receiptData.tierLabel = customerTier?.label || ''
+            receiptData.pointsEarned = pointsToEarn
+            const updatedCust = getCustomers().find(c => c.id === selectedCustomer)
+            if (updatedCust) receiptData.totalPoints = updatedCust.points || 0
+        }
+        setShowReceipt(receiptData)
         setShowCheckout(false); setCart([]); setPayment(''); setSelectedCustomer(''); setPointsUsed(0); setAppliedCoupon(null); setCouponCode(''); setSplitCashPart('')
         toast('ขายสำเร็จ! 🎉')
 
@@ -719,8 +728,23 @@ export default function StockOut() {
                 const filteredMembers = customers.filter(c =>
                     !memberSearch ||
                     c.name.toLowerCase().includes(memberSearch.toLowerCase()) ||
-                    (c.phone || '').includes(memberSearch)
+                    (c.phone || '').includes(memberSearch) ||
+                    (c.memberBarcode || '').includes(memberSearch)
                 )
+                const handleMemberBarcodeScan = (val) => {
+                    const clean = val.trim()
+                    if (!clean) return
+                    const found = customers.find(c =>
+                        (c.phone || '').replace(/\D/g, '') === clean.replace(/\D/g, '') ||
+                        (c.memberBarcode || '') === clean
+                    )
+                    if (found) {
+                        proceedCheckoutWithMember(found.id)
+                        playSound('scan')
+                    } else {
+                        setMemberSearch(clean)
+                    }
+                }
                 return (
                     <div className="modal-overlay" onClick={() => setShowMemberStep(false)}>
                         <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '480px' }}>
@@ -730,15 +754,16 @@ export default function StockOut() {
                             </div>
                             <div className="modal-body">
                                 <div style={{ marginBottom: 'var(--space-md)', padding: '10px 14px', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)', fontSize: '12px', color: 'var(--text-secondary)' }}>
-                                    💡 เลือกสมาชิกเพื่อรับส่วนลดและสะสมคะแนน หรือข้ามหากเป็นลูกค้าทั่วไป
+                                    💡 สแกนบาร์โค้ด/เบอร์โทรสมาชิก หรือค้นหาจากชื่อ
                                 </div>
                                 <div className="table-search" style={{ marginBottom: 'var(--space-md)' }}>
                                     <span className="search-icon">🔍</span>
                                     <input
                                         type="text"
-                                        placeholder="ค้นหาชื่อ / เบอร์โทร..."
+                                        placeholder="สแกนบาร์โค้ด / เบอร์โทร / ชื่อ..."
                                         value={memberSearch}
                                         onChange={e => setMemberSearch(e.target.value)}
+                                        onKeyDown={e => { if (e.key === 'Enter' && memberSearch.trim()) { handleMemberBarcodeScan(memberSearch) } }}
                                         autoFocus
                                     />
                                 </div>

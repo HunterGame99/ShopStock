@@ -10,15 +10,37 @@ export default function Customers() {
     const [form, setForm] = useState({ name: '', phone: '', note: '' })
     const [viewCustomer, setViewCustomer] = useState(null)
     const [purchases, setPurchases] = useState([])
+    const [tierFilter, setTierFilter] = useState('all')
+    const [sortBy, setSortBy] = useState('name')
     const toast = useToast()
 
     const reload = () => setCustomers(getCustomers())
     useEffect(() => { reload() }, [])
 
-    const filtered = customers.filter(c =>
-        c.name.toLowerCase().includes(search.toLowerCase()) ||
-        (c.phone || '').includes(search)
-    )
+    const filtered = customers.filter(c => {
+        const matchSearch = c.name.toLowerCase().includes(search.toLowerCase()) || (c.phone || '').includes(search)
+        const matchTier = tierFilter === 'all' || getCustomerTier(c).key === tierFilter
+        return matchSearch && matchTier
+    }).sort((a, b) => {
+        if (sortBy === 'spent') return (b.totalSpent || 0) - (a.totalSpent || 0)
+        if (sortBy === 'points') return (b.points || 0) - (a.points || 0)
+        if (sortBy === 'visits') return (b.visitCount || 0) - (a.visitCount || 0)
+        if (sortBy === 'newest') return new Date(b.createdAt || 0) - new Date(a.createdAt || 0)
+        return a.name.localeCompare(b.name, 'th')
+    })
+
+    const exportCustomerCSV = () => {
+        const header = '\uFEFFชื่อ,เบอร์โทร,ระดับ,ยอดซื้อสะสม,คะแนน,จำนวนครั้ง,หมายเหตุ,วันที่สมัคร\n'
+        const rows = filtered.map(c => {
+            const t = getCustomerTier(c)
+            return `"${c.name}","${c.phone || ''}","${t.label}",${c.totalSpent || 0},${c.points || 0},${c.visitCount || 0},"${c.note || ''}","${c.createdAt ? new Date(c.createdAt).toLocaleDateString('th-TH') : ''}"`
+        }).join('\n')
+        const blob = new Blob([header + rows], { type: 'text/csv;charset=utf-8;' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a'); a.href = url; a.download = `shopstock_customers_${new Date().toISOString().split('T')[0]}.csv`; a.click()
+        URL.revokeObjectURL(url)
+        toast('ดาวน์โหลด CSV สำเร็จ 📁')
+    }
 
     const openAdd = () => { setEditId(null); setForm({ name: '', phone: '', note: '' }); setShowModal(true) }
     const openEdit = (c) => { setEditId(c.id); setForm({ name: c.name, phone: c.phone || '', note: c.note || '' }); setShowModal(true) }
@@ -57,7 +79,21 @@ export default function Customers() {
             <div className="table-container">
                 <div className="table-toolbar">
                     <div className="table-search"><span className="search-icon">🔍</span><input type="text" placeholder="ค้นหาชื่อ / เบอร์โทร..." value={search} onChange={e => setSearch(e.target.value)} /></div>
-                    <button className="btn btn-primary" onClick={openAdd}>➕ เพิ่มลูกค้า</button>
+                    <div style={{ display: 'flex', gap: '4px', alignItems: 'center', flexWrap: 'wrap' }}>
+                        <button className={`btn btn-sm ${tierFilter === 'all' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTierFilter('all')}>ทั้งหมด</button>
+                        {MEMBERSHIP_TIERS.map(t => (
+                            <button key={t.key} className={`btn btn-sm ${tierFilter === t.key ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTierFilter(t.key)} style={{ color: tierFilter === t.key ? undefined : t.color }}>{t.emoji}</button>
+                        ))}
+                        <select className="form-control" value={sortBy} onChange={e => setSortBy(e.target.value)} style={{ width: 'auto', padding: '6px 10px', fontSize: 'var(--font-size-xs)' }}>
+                            <option value="name">เรียง: ชื่อ</option>
+                            <option value="spent">เรียง: ยอดซื้อ</option>
+                            <option value="points">เรียง: คะแนน</option>
+                            <option value="visits">เรียง: ครั้งที่ซื้อ</option>
+                            <option value="newest">เรียง: สมัครล่าสุด</option>
+                        </select>
+                        <button className="btn btn-secondary btn-sm" onClick={exportCustomerCSV}>📁 CSV</button>
+                        <button className="btn btn-primary" onClick={openAdd}>➕ เพิ่ม</button>
+                    </div>
                 </div>
                 {filtered.length === 0 ? (
                     <div className="table-empty"><div className="empty-icon">👥</div><p>ไม่พบลูกค้า</p></div>

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { getProducts, getTransactions, getProfitReport, getTopProducts, getSlowProducts, getReorderSuggestions, predictNextWeekSales, getLast7DaysData, exportData, importData, exportCSV, formatCurrency, formatNumber, fetchCloudDailySummary, getTaxSummary, exportTaxCSV, getSettings, EXPENSE_CATEGORIES, getCustomers, getCustomerTier, MEMBERSHIP_TIERS } from '../lib/storage.js'
+import { getProducts, getTransactions, getProfitReport, getTopProducts, getSlowProducts, getReorderSuggestions, predictNextWeekSales, getLast7DaysData, exportData, importData, exportCSV, formatCurrency, formatNumber, fetchCloudDailySummary, getTaxSummary, exportTaxCSV, getSettings, EXPENSE_CATEGORIES, getCustomers, getCustomerTier, MEMBERSHIP_TIERS, getCoupons } from '../lib/storage.js'
 import { useToast } from '../App.jsx'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts'
 
@@ -168,25 +168,34 @@ export default function Reports() {
                     </div>
 
                     {/* Payment methods breakdown */}
-                    {profitData.revenueByMethod && (
+                    {profitData.revenueByMethod && (() => {
+                        const methods = [
+                            { key: 'cash', label: '💵 เงินสด', color: '#4ade80', value: profitData.revenueByMethod.cash || 0 },
+                            { key: 'transfer', label: '📱 โอนเงิน', color: '#60a5fa', value: profitData.revenueByMethod.transfer || 0 },
+                            { key: 'qr', label: '📲 QR Code', color: '#f59e0b', value: profitData.revenueByMethod.qr || 0 },
+                            { key: 'split', label: '🌗 ผสม', color: '#a78bfa', value: profitData.revenueByMethod.split || 0 },
+                        ]
+                        const maxVal = Math.max(...methods.map(m => m.value), 1)
+                        return (
                     <div className="chart-container" style={{ marginTop: 'var(--space-md)', padding: 'var(--space-md)' }}>
-                        <div style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600, marginBottom: 'var(--space-sm)' }}>💳 สรุปยอดตามช่องทางชำระเงิน</div>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 'var(--space-md)' }}>
-                            <div style={{ padding: 'var(--space-sm)', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)' }}>
-                                <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)' }}>💵 เงินสด</div>
-                                <div style={{ fontSize: 'var(--font-size-lg)', fontWeight: 700, color: 'var(--success)' }}>{formatCurrency(profitData.revenueByMethod.cash)}</div>
-                            </div>
-                            <div style={{ padding: 'var(--space-sm)', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)' }}>
-                                <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)' }}>📱 โอนเงิน (Transfer)</div>
-                                <div style={{ fontSize: 'var(--font-size-lg)', fontWeight: 700, color: 'var(--accent-primary-hover)' }}>{formatCurrency(profitData.revenueByMethod.transfer)}</div>
-                            </div>
-                            <div style={{ padding: 'var(--space-sm)', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)' }}>
-                                <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)' }}>🏷️ จ่ายผ่าน QR</div>
-                                <div style={{ fontSize: 'var(--font-size-lg)', fontWeight: 700, color: '#f59e0b' }}>{formatCurrency(profitData.revenueByMethod.qr)}</div>
-                            </div>
+                        <div style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600, marginBottom: 'var(--space-md)' }}>� สรุปยอดตามช่องทางชำระเงิน ({period} วัน)</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                            {methods.filter(m => m.value > 0).map(m => (
+                                <div key={m.key}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--font-size-xs)', marginBottom: '3px' }}>
+                                        <span style={{ color: 'var(--text-secondary)' }}>{m.label}</span>
+                                        <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{formatCurrency(m.value)} ({profitData.revenue > 0 ? ((m.value / profitData.revenue) * 100).toFixed(1) : 0}%)</span>
+                                    </div>
+                                    <div style={{ height: '20px', background: 'var(--bg-secondary)', borderRadius: '6px', overflow: 'hidden' }}>
+                                        <div style={{ height: '100%', background: m.color, borderRadius: '6px', width: `${(m.value / maxVal) * 100}%`, transition: 'width 0.5s' }} />
+                                    </div>
+                                </div>
+                            ))}
+                            {methods.every(m => m.value === 0) && <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 'var(--space-md)' }}>ไม่มีข้อมูล</div>}
                         </div>
                     </div>
-                    )}
+                        )
+                    })()}
 
                     {/* Profit chart */}
                     <div className="chart-container" style={{ marginTop: 'var(--space-lg)' }}>
@@ -416,6 +425,42 @@ export default function Reports() {
                                 )}
                             </div>
                         </div>
+
+                        {/* Coupon Usage Summary */}
+                        {(() => {
+                            const allCoupons = getCoupons()
+                            if (allCoupons.length === 0) return null
+                            const totalUsed = allCoupons.reduce((s, c) => s + (c.usedCount || 0), 0)
+                            const now = new Date()
+                            const active = allCoupons.filter(c => c.active && (!c.expiresAt || new Date(c.expiresAt) > now))
+                            const expired = allCoupons.filter(c => c.expiresAt && new Date(c.expiresAt) < now)
+                            return (
+                                <div className="chart-container" style={{ marginTop: 'var(--space-lg)' }}>
+                                    <div className="chart-header"><h3>🎫 สรุปการใช้คูปอง</h3></div>
+                                    <div className="stat-cards" style={{ marginBottom: 'var(--space-md)' }}>
+                                        <div className="stat-card mini"><div className="stat-card-icon purple">🎫</div><div className="stat-card-info"><h3>คูปองทั้งหมด</h3><div className="stat-value" style={{ fontSize: 'var(--font-size-lg)' }}>{allCoupons.length}</div></div></div>
+                                        <div className="stat-card mini"><div className="stat-card-icon green">✅</div><div className="stat-card-info"><h3>ใช้งานอยู่</h3><div className="stat-value" style={{ fontSize: 'var(--font-size-lg)' }}>{active.length}</div></div></div>
+                                        <div className="stat-card mini"><div className="stat-card-icon blue">🧾</div><div className="stat-card-info"><h3>ใช้ไปแล้ว</h3><div className="stat-value" style={{ fontSize: 'var(--font-size-lg)' }}>{totalUsed} ครั้ง</div></div></div>
+                                        <div className="stat-card mini"><div className="stat-card-icon red">⛔</div><div className="stat-card-info"><h3>หมดอายุ</h3><div className="stat-value" style={{ fontSize: 'var(--font-size-lg)' }}>{expired.length}</div></div></div>
+                                    </div>
+                                    {allCoupons.filter(c => c.usedCount > 0).length > 0 && (
+                                        <div className="low-stock-list">
+                                            {allCoupons.filter(c => c.usedCount > 0).sort((a, b) => b.usedCount - a.usedCount).map(c => (
+                                                <div key={c.id} className="low-stock-item">
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                        <span style={{ fontWeight: 800, fontFamily: 'monospace', fontSize: 'var(--font-size-sm)', color: 'var(--accent-primary)' }}>{c.code}</span>
+                                                        <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                                                            {c.type === 'percent' ? `ลด ${c.value}%` : `ลด ${formatCurrency(c.value)}`}
+                                                        </span>
+                                                    </div>
+                                                    <span style={{ fontWeight: 700, fontSize: 'var(--font-size-xs)' }}>ใช้ {c.usedCount} ครั้ง {c.maxUses ? `/ ${c.maxUses}` : ''}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )
+                        })()}
                     </>
                 )
             })()}

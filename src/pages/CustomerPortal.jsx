@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { getCustomers, getTransactions, getPromotions, formatCurrency, formatDate, getCustomerTier, getNextTier, MEMBERSHIP_TIERS, getRewards, seedDefaultRewards } from '../lib/storage.js'
+import { getCustomers, getTransactions, getPromotions, formatCurrency, formatDate, getCustomerTier, getNextTier, MEMBERSHIP_TIERS, getRewards, seedDefaultRewards, getCoupons } from '../lib/storage.js'
 
 export default function CustomerPortal() {
     const [phone, setPhone] = useState('')
@@ -10,11 +10,14 @@ export default function CustomerPortal() {
     const [error, setError] = useState('')
 
     const [rewards, setRewards] = useState([])
+    const [coupons, setCoupons] = useState([])
 
     useEffect(() => {
         setPromotions(getPromotions().filter(p => p.active))
         seedDefaultRewards()
         setRewards(getRewards().filter(r => r.active))
+        const now = new Date()
+        setCoupons(getCoupons().filter(c => c.active && (!c.expiresAt || new Date(c.expiresAt) > now) && (!c.maxUses || c.usedCount < c.maxUses)))
     }, [])
 
     // Auto-logout after 60 seconds of inactivity
@@ -202,6 +205,30 @@ export default function CustomerPortal() {
                         </div>
                         <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)', marginTop: 'var(--space-sm)', textAlign: 'center' }}>
                             แจ้งพนักงานเพื่อแลกของรางวัล ณ จุดชำระเงิน
+                        </div>
+                    </div>
+                )}
+
+                {/* Available Coupons */}
+                {coupons.length > 0 && (
+                    <div style={{ marginBottom: 'var(--space-xl)' }}>
+                        <h3 style={{ marginBottom: 'var(--space-md)', display: 'flex', alignItems: 'center', gap: '8px' }}>🎫 คูปองส่วนลด</h3>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
+                            {coupons.map(c => (
+                                <div key={c.id} style={{ background: 'var(--bg-card)', padding: 'var(--space-md)', borderRadius: 'var(--radius-md)', border: '1px dashed var(--accent-primary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <div>
+                                        <div style={{ fontWeight: 800, fontSize: '1rem', color: 'var(--accent-primary)', fontFamily: 'monospace', letterSpacing: '1px' }}>{c.code}</div>
+                                        <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-muted)', marginTop: '3px' }}>
+                                            {c.type === 'percent' ? `ลด ${c.value}%` : `ลด ${formatCurrency(c.value)}`}
+                                            {c.minSpend > 0 && ` • ขั้นต่ำ ${formatCurrency(c.minSpend)}`}
+                                        </div>
+                                    </div>
+                                    <div style={{ textAlign: 'right' }}>
+                                        {c.expiresAt && <div style={{ fontSize: '10px', color: 'var(--warning)', fontWeight: 600 }}>หมดอายุ {new Date(c.expiresAt).toLocaleDateString('th-TH')}</div>}
+                                        <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>แจ้งโค้ดนี้ ณ จุดชำระเงิน</div>
+                                    </div>
+                                </div>
+                            ))}
                         </div>
                     </div>
                 )}
